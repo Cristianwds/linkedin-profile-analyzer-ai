@@ -1,0 +1,19 @@
+# Secretos y credenciales (¡CRÍTICO!)
+.env
+client_secret.json
+token.json
+
+# Entornos virtuales de Python
+venv/
+env/
+.venv/
+
+# Archivos de caché compilados
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
