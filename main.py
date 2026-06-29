@@ -326,8 +326,7 @@ def generar_documento_informe(servicio_drive, id_plantilla, id_carpeta_destino, 
     print(f"✍️  Generando documento de feedback para: {nombre} {apellido}...")
 
     try:
-        # 1. Copiamos la plantilla (con logo, estilos, etc.) directo a la carpeta de destino.
-        #    Esto reemplaza la creación de un Doc vacío.
+        # 1. Copiamos la plantilla directo a la carpeta de destino.
         metadata_copia = {
             'name': nombre_documento,
             'parents': [id_carpeta_destino]
@@ -351,18 +350,34 @@ def generar_documento_informe(servicio_drive, id_plantilla, id_carpeta_destino, 
             pedidos.append({
                 'replaceAllText': {
                     'containsText': {
-                        'text': f"{{{{{placeholder}}}}}",  # busca exactamente {{PLACEHOLDER}}
+                        'text': f"{{{{{placeholder}}}}}",
                         'matchCase': True
                     },
                     'replaceText': str(valor) if valor is not None else ""
                 }
             })
 
-        # 4. Ejecutamos todos los reemplazos en una sola llamada batchUpdate
-        servicio_docs.documents().batchUpdate(
-            documentId=doc_id,
-            body={'requests': pedidos}
-        ).execute()
+        # 4. Ejecutamos el batchUpdate, con reintentos por si la copia
+        #    todavía no está lista para recibir ediciones justo después de crearse.
+        intentos_batch = 3
+        for intento in range(intentos_batch):
+            resultado_batch = servicio_docs.documents().batchUpdate(
+                documentId=doc_id,
+                body={'requests': pedidos}
+            ).execute()
+
+            total_reemplazos = sum(
+                r.get('replaceAllText', {}).get('occurrencesChanged', 0)
+                for r in resultado_batch.get('replies', [])
+            )
+
+            if total_reemplazos > 0:
+                break  # Reemplazó correctamente, no hace falta reintentar
+
+            print(f"   [Aviso] No se detectaron reemplazos (intento {intento+1}/{intentos_batch}). Reintentando en 2s...")
+            time.sleep(2)
+        else:
+            print(f"   ⚠️ El documento de {nombre} {apellido} se creó, pero no se pudo completar la información.")
 
         print(f"✅ Documento guardado en Drive (ID: {doc_id}).")
         return doc_id
@@ -427,4 +442,4 @@ if __name__ == "__main__":
 
         print("\n🎉 PIPELINE FINALIZADO. Resultados obtenidos:")
         # Imprimimos la lista completa de resultados estructurados
-        print(json.dumps(resultados_finales, indent=2, ensure_ascii=False))
+        # print(json.dumps(resultados_finales, indent=2, ensure_ascii=False))
