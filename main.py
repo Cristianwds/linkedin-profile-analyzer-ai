@@ -37,6 +37,7 @@ SCOPES = [
 ID_SPREADSHEET = os.getenv('ID_SPREADSHEET')
 ID_CARPETA = os.getenv('ID_CARPETA')
 ID_CARPETA_INFORMES = os.getenv('ID_CARPETA_INFORMES')
+ID_CARPETA_ANALIZADOS = os.getenv('ID_CARPETA_ANALIZADOS')  # Carpeta padre para PDFs ya analizados
 ID_PLANTILLA_INFORME = os.getenv('ID_PLANTILLA_INFORME')  # <-- NUEVO: ID del Google Doc plantilla
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
@@ -51,6 +52,11 @@ Tu tarea es evaluar el texto extraído del perfil de LinkedIn de un estudiante y
 
 CONTEXTO TEMPORAL:
 Hoy es {FECHA_ACTUAL}. Evalúa la coherencia de los meses y años transcurridos en base a esta fecha actual.
+
+DATOS A EXTRAER (no son parte del checklist, son datos factuales del perfil):
+   - Carrera: buscá en la sección Educación el título/carrera que el estudiante está cursando
+     o completó en la Universidad de San Andrés (ej: "Licenciatura en Administración de
+     Empresas"). Si no figura de forma clara, usá "No especificado". No lo inventes.
 
 CRITERIOS DE EVALUACIÓN (CHECKLIST UDESA):
 1. Fundamentales:
@@ -77,6 +83,7 @@ ESTRUCTURA EXACTA DEL JSON:
 {
   "apellido_estudiante": "Apellido",
   "nombre_estudiante": "Nombre",
+  "carrera_estudiante": "Carrera o 'No especificado'",
   "puntaje_general": 0,
   "color_semaforo": "Verde, Amarillo o Rojo",
   "observacion_principal": "• Fuerte: [El mayor acierto]\\n• Crítico: [El error más grave]\\n• Acción: [Paso inmediato a seguir]",
@@ -184,6 +191,52 @@ def extraer_texto_drive_en_memoria(servicio, file_id):
         return texto_completo
     except Exception as e:
         return None
+
+# ==============================================================================
+# MÓDULO 1B: GOOGLE DRIVE (Subcarpetas por fecha y movimiento de archivos)
+# ==============================================================================
+
+def obtener_o_crear_subcarpeta(servicio_drive, id_carpeta_padre, nombre_subcarpeta):
+    """
+    Busca una subcarpeta con nombre 'nombre_subcarpeta' dentro de id_carpeta_padre.
+    Si no existe, la crea. Idempotente: si se corre dos veces el mismo día, no duplica.
+    """
+    query = (
+        f"'{id_carpeta_padre}' in parents and name='{nombre_subcarpeta}' "
+        "and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    )
+    resultados = servicio_drive.files().list(
+        q=query, spaces='drive', fields='files(id, name)'
+    ).execute()
+    encontradas = resultados.get('files', [])
+
+    if encontradas:
+        return encontradas[0]['id']
+
+    metadata = {
+        'name': nombre_subcarpeta,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [id_carpeta_padre]
+    }
+    carpeta = servicio_drive.files().create(body=metadata, fields='id').execute()
+    print(f"📁 Subcarpeta creada: '{nombre_subcarpeta}'")
+    return carpeta.get('id')
+
+
+def mover_archivo_a_carpeta(servicio_drive, file_id, id_carpeta_destino, id_carpeta_origen):
+    """Mueve un archivo de Drive de una carpeta a otra (Drive maneja carpetas como 'padres')."""
+    try:
+        servicio_drive.files().update(
+            fileId=file_id,
+            addParents=id_carpeta_destino,
+            removeParents=id_carpeta_origen,
+            fields='id, parents'
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"   [⚠️ No se pudo mover el archivo a 'Analizados': {e}]")
+        return False
+
 
 # ==============================================================================
 # CONFIGURACIÓN MULTI-PROVEEDOR
@@ -354,16 +407,65 @@ def autenticar_sheets():
         return None
 
 
-def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados):
-    """Toma el JSON de la IA y agrega las filas respetando la estructura de 5 columnas."""
-    print("\nEscribiendo datos en Google Sheets...")
+NOMBRE_HOJA_PLANTILLA = "Plantilla"
+NOMBRE_HOJA_HISTORICO = "Histórico"
+
+
+def _obtener_metadata_hojas(servicio_sheets, spreadsheet_id):
+    """Devuelve la lista de propiedades (sheetId, title, index) de cada hoja del spreadsheet."""
+    resultado = servicio_sheets.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields='sheets.properties'
+    ).execute()
+    return [hoja['properties'] for hoja in resultado.get('sheets', [])]
+
+
+def obtener_o_crear_hoja_diaria(servicio_sheets, spreadsheet_id, fecha_iso):
+    """
+    Devuelve el nombre de la hoja del día (formato AAAA-MM-DD). Si todavía no existe,
+    la crea duplicando la hoja 'Plantilla' (así hereda headers/formato) y la renombra.
+    Si el pipeline ya corrió hoy, simplemente reutiliza la hoja existente.
+    """
+    hojas = _obtener_metadata_hojas(servicio_sheets, spreadsheet_id)
+    titulos = {hoja['title']: hoja['sheetId'] for hoja in hojas}
+
+    if fecha_iso in titulos:
+        return fecha_iso
+
+    if NOMBRE_HOJA_PLANTILLA not in titulos:
+        raise RuntimeError(
+            f"No se encontró la hoja '{NOMBRE_HOJA_PLANTILLA}'. "
+            "Creála a mano con los headers correspondientes antes de correr el pipeline."
+        )
+
+    peticion = {
+        'requests': [{
+            'duplicateSheet': {
+                'sourceSheetId': titulos[NOMBRE_HOJA_PLANTILLA],
+                'insertSheetIndex': len(hojas),
+                'newSheetName': fecha_iso
+            }
+        }]
+    }
+    servicio_sheets.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body=peticion
+    ).execute()
+
+    print(f"📄 Hoja nueva creada para hoy: '{fecha_iso}'")
+    return fecha_iso
+
+
+def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, nombre_hoja):
+    """Agrega las filas del día a la hoja diaria (6 columnas: Apellido, Nombre, Carrera, Puntaje, Semáforo, Observación)."""
+    print(f"\nEscribiendo datos en la hoja '{nombre_hoja}'...")
 
     valores = []
     for resultado in lista_resultados:
-        # Aseguramos el orden exacto: Apellido, Nombre, Puntaje, Semáforo, Observación
         fila = [
             resultado.get('apellido_estudiante', ''),
             resultado.get('nombre_estudiante', 'Desconocido'),
+            resultado.get('carrera_estudiante', 'No especificado'),
             resultado.get('puntaje_general', 0),
             resultado.get('color_semaforo', 'Error'),
             resultado.get('observacion_principal', 'Sin observaciones.')
@@ -371,20 +473,55 @@ def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados):
         valores.append(fila)
 
     cuerpo = {'values': valores}
+    # Rango con el nombre de hoja entre comillas simples: soporta nombres con espacios/tildes.
+    rango = f"'{nombre_hoja}'!A2:F"
 
     try:
-        # Cambiamos el rango a 'A2:E' para abarcar tus 5 columnas
         resultado = servicio_sheets.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range='A2:E',
+            range=rango,
             valueInputOption='USER_ENTERED',
             body=cuerpo
         ).execute()
 
         filas_actualizadas = resultado.get('updates').get('updatedCells')
-        print(f"✅ ¡Éxito! Se actualizaron {filas_actualizadas} celdas en la matriz.")
+        print(f"✅ ¡Éxito! Se actualizaron {filas_actualizadas} celdas en '{nombre_hoja}'.")
     except Exception as e:
         print(f"Error al escribir en Sheets: {e}")
+
+
+def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy):
+    """Agrega las filas del día a la hoja fija 'Histórico' (7 columnas, Fecha en A)."""
+    print(f"Escribiendo datos en '{NOMBRE_HOJA_HISTORICO}'...")
+
+    valores = []
+    for resultado in lista_resultados:
+        fila = [
+            fecha_hoy,
+            resultado.get('apellido_estudiante', ''),
+            resultado.get('nombre_estudiante', 'Desconocido'),
+            resultado.get('carrera_estudiante', 'No especificado'),
+            resultado.get('puntaje_general', 0),
+            resultado.get('color_semaforo', 'Error'),
+            resultado.get('observacion_principal', 'Sin observaciones.')
+        ]
+        valores.append(fila)
+
+    cuerpo = {'values': valores}
+    rango = f"'{NOMBRE_HOJA_HISTORICO}'!A2:G"
+
+    try:
+        resultado = servicio_sheets.spreadsheets().values().append(
+            spreadsheetId=spreadsheet_id,
+            range=rango,
+            valueInputOption='USER_ENTERED',
+            body=cuerpo
+        ).execute()
+
+        filas_actualizadas = resultado.get('updates').get('updatedCells')
+        print(f"✅ ¡Éxito! Se actualizaron {filas_actualizadas} celdas en '{NOMBRE_HOJA_HISTORICO}'.")
+    except Exception as e:
+        print(f"Error al escribir en '{NOMBRE_HOJA_HISTORICO}': {e}")
 
 
 # ==============================================================================
@@ -408,6 +545,7 @@ def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
     return {
         "NOMBRE_ESTUDIANTE": datos_alumno.get('nombre_estudiante', 'Desconocido'),
         "APELLIDO_ESTUDIANTE": datos_alumno.get('apellido_estudiante', ''),
+        "CARRERA_ESTUDIANTE": datos_alumno.get('carrera_estudiante', 'No especificado'),
         "FECHA_INFORME": fecha_hoy,
         "PUNTAJE_GENERAL": str(datos_alumno.get('puntaje_general', 0)),
         "COLOR_SEMAFORO": datos_alumno.get('color_semaforo', 'Desconocido'),
@@ -513,18 +651,31 @@ def generar_documento_informe(servicio_drive, id_plantilla, id_carpeta_destino, 
 if __name__ == "__main__":
     print("Iniciando Pipeline de Desarrollo Profesional UdeSA...")
 
-    fecha_hoy = date.today().strftime("%d/%m/%Y")
+    # Fecha calculada una única vez acá, y pasada como parámetro al resto del pipeline.
+    hoy = date.today()
+    fecha_hoy = hoy.strftime("%d/%m/%Y")   # Formato humano: IA, informes, columna 'Fecha' del Histórico
+    fecha_iso = hoy.strftime("%Y-%m-%d")   # Formato ISO: nombres de hoja y de subcarpetas
 
-    # Validación temprana: si falta el ID de la plantilla, avisamos antes de procesar nada.
+    # Validaciones tempranas: si falta algún ID, avisamos antes de procesar nada.
     if not ID_PLANTILLA_INFORME:
         print("⚠️  ADVERTENCIA: No se encontró ID_PLANTILLA_INFORME en el archivo .env.")
         print("   Los informes individuales no podrán generarse hasta configurar esa variable.")
+    if not ID_CARPETA_ANALIZADOS:
+        print("⚠️  ADVERTENCIA: No se encontró ID_CARPETA_ANALIZADOS en el archivo .env.")
+        print("   Los perfiles analizados no se moverán hasta configurar esa variable.")
 
     servicio_drive = autenticar_drive()
 
     if servicio_drive:
         lista_pdfs = listar_pdfs_en_carpeta(servicio_drive, ID_CARPETA)
         print(f"Se encontraron {len(lista_pdfs)} perfiles para analizar.\n")
+
+        # Subcarpeta de 'Analizados' del día (se crea una sola vez si no existe).
+        carpeta_analizados_hoy = None
+        if ID_CARPETA_ANALIZADOS:
+            carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
+                servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
+            )
 
         resultados_finales = []  # Aquí guardaremos todos los JSONs
 
@@ -541,20 +692,38 @@ if __name__ == "__main__":
                     resultados_finales.append(analisis_json)
                     print(f"✅ Análisis completado para: {analisis_json.get('nombre_estudiante', 'Desconocido')}")
 
+                    # Paso C: Mover el PDF ya analizado, para no volver a listarlo mañana.
+                    # Si falla el análisis (los 3 proveedores caen), el PDF se queda en la
+                    # carpeta original a propósito, para reintentarlo en la próxima corrida.
+                    if carpeta_analizados_hoy:
+                        movido = mover_archivo_a_carpeta(
+                            servicio_drive, archivo['id'], carpeta_analizados_hoy, ID_CARPETA
+                        )
+                        if movido:
+                            print(f"   📦 Movido a 'Analizados/{fecha_iso}'.")
+                else:
+                    print("   ⚠️ No se pudo analizar (fallaron los 3 proveedores). Queda en la carpeta original para reintentar.")
+
             print("-" * 40)
 
+        # PASO 3: Escribir en la hoja diaria y en el Histórico
         servicio_sheets = autenticar_sheets()
         if servicio_sheets and resultados_finales:
-            escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales)
+            nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
+            escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy)
+            escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy)
 
-        # PASO 4: Generar los Google Docs individuales a partir de la plantilla
-        if ID_PLANTILLA_INFORME:
+        # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
+        if ID_PLANTILLA_INFORME and resultados_finales:
             print("\nIniciando fase de creación de reportes individuales...")
+            carpeta_informes_hoy = obtener_o_crear_subcarpeta(
+                servicio_drive, ID_CARPETA_INFORMES, fecha_iso
+            )
             for resultado in resultados_finales:
                 generar_documento_informe(
                     servicio_drive,
                     ID_PLANTILLA_INFORME,
-                    ID_CARPETA_INFORMES,
+                    carpeta_informes_hoy,
                     resultado,
                     fecha_hoy
                 )
