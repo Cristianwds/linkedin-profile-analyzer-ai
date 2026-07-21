@@ -3,3 +3,5 @@ google-api-python-client
 google-auth-oauthlib
 pdfplumber
 python-dotenv
+openai
+groq

@@ -2,6 +2,7 @@
 .env
 client_secret.json
 token.json
+cache_analisis.json
 
 # Entornos virtuales de Python
 venv/

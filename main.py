@@ -3,6 +3,8 @@ import json
 import os
 import pdfplumber
 import time
+import hashlib
+
 from datetime import date
 
 from google import genai
@@ -11,6 +13,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from dotenv import load_dotenv
+from openai import OpenAI
+from groq import Groq
 
 # Activacion del venv antes de ejecutar: venv\Scripts\activate
 # ejecucion del codigo: python main.py
@@ -35,6 +39,8 @@ ID_CARPETA = os.getenv('ID_CARPETA')
 ID_CARPETA_INFORMES = os.getenv('ID_CARPETA_INFORMES')
 ID_PLANTILLA_INFORME = os.getenv('ID_PLANTILLA_INFORME')  # <-- NUEVO: ID del Google Doc plantilla
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -179,47 +185,160 @@ def extraer_texto_drive_en_memoria(servicio, file_id):
     except Exception as e:
         return None
 
+# ==============================================================================
+# CONFIGURACIÓN MULTI-PROVEEDOR
+# ==============================================================================
+
+
+# Orden de la cadena de fallback. Gemini primero (mejor calidad de análisis),
+# después los proveedores gratuitos alternativos.
+ORDEN_PROVEEDORES = ["gemini", "groq", "nvidia"]
+
+cliente_groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+cliente_nvidia = OpenAI(
+    api_key=NVIDIA_API_KEY,
+    base_url="https://integrate.api.nvidia.com/v1"
+) if NVIDIA_API_KEY else None
 
 # ==============================================================================
-# MÓDULO 2: GEMINI (Análisis de IA con Manejo de Cuotas)
+# CACHÉ POR HASH DE CONTENIDO (evita re-analizar el mismo perfil dos veces)
 # ==============================================================================
 
-def analizar_perfil_con_ia(texto_perfil, fecha_hoy, intentos_maximos=4):
-    instrucciones_con_fecha = INSTRUCCIONES_SISTEMA.replace("{FECHA_ACTUAL}", fecha_hoy)
-    prompt = f"{instrucciones_con_fecha}\n\nPERFIL DEL ESTUDIANTE:\n{texto_perfil}"
+ARCHIVO_CACHE = "cache_analisis.json"
+
+
+def cargar_cache():
+    if os.path.exists(ARCHIVO_CACHE):
+        try:
+            with open(ARCHIVO_CACHE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def guardar_cache(cache):
+    try:
+        with open(ARCHIVO_CACHE, 'w', encoding='utf-8') as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"   [⚠️ No se pudo guardar la caché: {e}]")
+
+
+def calcular_hash_perfil(texto_perfil):
+    contenido = texto_perfil + INSTRUCCIONES_SISTEMA  # si cambian las instrucciones, cambia el hash
+    return hashlib.sha256(contenido.encode('utf-8')).hexdigest()
+
+
+CACHE_ANALISIS = cargar_cache()
+
+# ==============================================================================
+# MÓDULO 2: MULTI-PROVEEDOR IA (Gemini → Groq → NVIDIA con backoff y caché)
+# ==============================================================================
+
+def _es_error_de_limite(error_msg):
+    error_msg = error_msg.lower()
+    return "429" in error_msg or "quota" in error_msg or "rate" in error_msg or "503" in error_msg or "demand" in error_msg
+
+
+def _llamar_gemini(prompt):
+    respuesta = client.models.generate_content(
+        model='gemini-flash-latest',
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.2
+        )
+    )
+    return respuesta.text
+
+
+def _llamar_groq(prompt):
+    if not cliente_groq:
+        raise RuntimeError("GROQ_API_KEY no configurada.")
+    respuesta = cliente_groq.chat.completions.create(
+        model="llama-3.3-70b-versatile", # model="llama-3.1-8b-instant" por si hay que analizar muchos
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_completion_tokens=2048,
+        top_p=1,
+        stream=False,          # necesitamos la respuesta completa para parsear JSON, no streaming
+        response_format={"type": "json_object"},
+        stop=None
+    )
+    return respuesta.choices[0].message.content
+
+
+def _llamar_nvidia(prompt):
+    if not cliente_nvidia:
+        raise RuntimeError("NVIDIA_API_KEY no configurada.")
+    respuesta = cliente_nvidia.chat.completions.create(
+        model="meta/llama-3.3-70b-instruct",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        top_p=0.7,
+        max_tokens=2048,
+        stream=False
+    )
+    texto = respuesta.choices[0].message.content
+    # NVIDIA no siempre soporta json mode estricto según el modelo; limpiamos
+    # posibles fences de markdown por si el modelo los agrega igual.
+    return texto.replace("```json", "").replace("```", "").strip()
+
+
+ADAPTADORES = {
+    "gemini": _llamar_gemini,
+    "groq": _llamar_groq,
+    "nvidia": _llamar_nvidia,
+}
+
+
+def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3):
+    """Reintenta un proveedor con backoff exponencial. Devuelve JSON parseado o None."""
+    funcion = ADAPTADORES[nombre_proveedor]
 
     for intento in range(intentos_maximos):
         try:
-            respuesta = client.models.generate_content(
-                model='gemini-flash-latest',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.2
-                )
-            )
-            return json.loads(respuesta.text)
+            texto_crudo = funcion(prompt)
+            return json.loads(texto_crudo)
         except Exception as e:
             error_msg = str(e)
 
-            # Bloque 1: Si es un micro-corte del servidor (503)
-            if "503" in error_msg or "demand" in error_msg:
-                print(f"   [⚠️ Servidor saturado. Reintentando ({intento+1}/{intentos_maximos}) en 5 segundos...]")
-                time.sleep(5)
-
-            # Bloque 2: Si agotamos la cuota gratuita por minuto (429)
-            elif "429" in error_msg or "Quota" in error_msg:
-                print(f"   [⏳ Límite de API alcanzado. El bot pausará por 60 segundos antes del reintento ({intento+1}/{intentos_maximos})...]")
-                time.sleep(60)  # Pausa larga para que se reinicie el contador de Google
-
-            # Bloque 3: Errores irrecuperables
+            if _es_error_de_limite(error_msg):
+                espera = 2 ** (intento + 1)  # 2s, 4s, 8s...
+                print(f"   [⏳ {nombre_proveedor}: límite alcanzado. Reintento {intento+1}/{intentos_maximos} en {espera}s...]")
+                time.sleep(espera)
             else:
-                print(f"Error crítico en Gemini: {e}")
+                print(f"   [❌ {nombre_proveedor}: error irrecuperable → {e}]")
                 return None
 
-    print("   ❌ Se agotaron los intentos para este perfil.")
+    print(f"   [❌ {nombre_proveedor}: se agotaron los reintentos.]")
     return None
 
+
+def analizar_perfil_con_ia(texto_perfil, fecha_hoy):
+    """Orquestador: caché → Gemini → Groq → NVIDIA."""
+
+    hash_perfil = calcular_hash_perfil(texto_perfil)
+    if hash_perfil in CACHE_ANALISIS:
+        print("   [💾 Resultado obtenido de caché, no se llamó a ninguna IA.]")
+        return CACHE_ANALISIS[hash_perfil]
+
+    instrucciones_con_fecha = INSTRUCCIONES_SISTEMA.replace("{FECHA_ACTUAL}", fecha_hoy)
+    prompt = f"{instrucciones_con_fecha}\n\nPERFIL DEL ESTUDIANTE:\n{texto_perfil}"
+
+    for proveedor in ORDEN_PROVEEDORES:
+        print(f"   [🔎 Analizando con: {proveedor}]")
+        resultado = _intentar_proveedor_con_backoff(proveedor, prompt)
+        if resultado:
+            CACHE_ANALISIS[hash_perfil] = resultado
+            guardar_cache(CACHE_ANALISIS)
+            return resultado
+        print(f"   [↪️ Pasando al siguiente proveedor tras fallo de {proveedor}...]")
+
+    print("   ❌ Ningún proveedor pudo analizar este perfil.")
+    return None
 
 # ==============================================================================
 # MÓDULO 3: GOOGLE SHEETS (Escritura de Matriz Actualizada)
@@ -440,6 +559,6 @@ if __name__ == "__main__":
                     fecha_hoy
                 )
 
-        print("\n🎉 PIPELINE FINALIZADO. Resultados obtenidos:")
+        print("\n🎉 PIPELINE FINALIZADO.")
         # Imprimimos la lista completa de resultados estructurados
         # print(json.dumps(resultados_finales, indent=2, ensure_ascii=False))
