@@ -54,9 +54,15 @@ CONTEXTO TEMPORAL:
 Hoy es {FECHA_ACTUAL}. Evalúa la coherencia de los meses y años transcurridos en base a esta fecha actual.
 
 DATOS A EXTRAER (no son parte del checklist, son datos factuales del perfil):
-   - Carrera: buscá en la sección Educación el título/carrera que el estudiante está cursando
-     o completó en la Universidad de San Andrés (ej: "Licenciatura en Administración de
-     Empresas"). Si no figura de forma clara, usá "No especificado". No lo inventes.
+   - Carrera: identificá la carrera/título universitario del estudiante. Este dato puede aparecer en más de un lugar
+     del perfil — revisá SIEMPRE estas tres fuentes antes de decidir, no te quedes con la primera
+     que encuentres:
+       1. Titular (headline): a veces dice directamente algo como "Estudiante de [Carrera] en
+          [Universidad]".
+       2. Extracto: a veces se menciona la carrera o el año que cursa dentro del texto libre.
+       3. Educación: el nombre del título/grado listado ahí.
+     Si varias fuentes coinciden, preferí la redacción de Educación por ser la más precisa y
+     formal. Si Educación es ambigua o no aparece, usá lo que diga el Titular o el Extracto.
 
 CRITERIOS DE EVALUACIÓN (CHECKLIST UDESA):
 1. Fundamentales:
@@ -83,7 +89,7 @@ ESTRUCTURA EXACTA DEL JSON:
 {
   "apellido_estudiante": "Apellido",
   "nombre_estudiante": "Nombre",
-  "carrera_estudiante": "Carrera o 'No especificado'",
+  "carrera_estudiante": "<nombre de la carrera detectada>",
   "puntaje_general": 0,
   "color_semaforo": "Verde, Amarillo o Rojo",
   "observacion_principal": "• Fuerte: [El mayor acierto]\\n• Crítico: [El error más grave]\\n• Acción: [Paso inmediato a seguir]",
@@ -672,10 +678,11 @@ if __name__ == "__main__":
 
         # Subcarpeta de 'Analizados' del día (se crea una sola vez si no existe).
         carpeta_analizados_hoy = None
-        if ID_CARPETA_ANALIZADOS:
-            carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
-                servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
-            )
+        # Lo comento solo para seguir con las pruebas. Luego descomentar para que se muevan los perfiles
+        #if ID_CARPETA_ANALIZADOS:
+        #    carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
+        #        servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
+        #    )
 
         resultados_finales = []  # Aquí guardaremos todos los JSONs
 
