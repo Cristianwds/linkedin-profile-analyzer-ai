@@ -1,0 +1,31 @@
+--- Página 1 ---
+UNIVERSIDAD DE SAN ANDRÉS
+PLAN DE ESTUDIOS: INGENIERÍA EN INTELIGENCIA ARTIFICIAL
+
+El graduado de la carrera de Ingeniería en Inteligencia Artificial poseerá una sólida formación en ciencias básicas, ciencias de la computación y algoritmos avanzados de Machine Learning, preparándolo para liderar la innovación tecnológica.
+
+--- Página 2 ---
+PRIMER AÑO
+- Análisis Matemático I
+- Álgebra Lineal
+- Introducción a la Programación (Python)
+- Física I
+
+SEGUNDO AÑO
+- Algoritmos y Estructuras de Datos (C++)
+- Probabilidad y Estadística
+- Bases de Datos
+- Arquitectura de Computadoras
+
+--- Página 3 ---
+TERCER AÑO
+- Machine Learning I
+- Redes Neuronales y Deep Learning
+- Optimización Continua
+- Ingeniería de Software
+
+CUARTO AÑO
+- Procesamiento de Lenguaje Natural (NLP)
+- Visión Computacional
+- Ética y Sesgos en IA
+- Proyecto Final de Ingeniería

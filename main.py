@@ -2,6 +2,7 @@ import io
 import json
 import os
 import pdfplumber
+import re
 import time
 import hashlib
 
@@ -77,13 +78,37 @@ CRITERIOS DE EVALUACIÓN (CHECKLIST UDESA):
    - Educación: ¿Está completa y relevante?
    - Certificaciones: ¿Añadió credenciales importantes?
 
-3. Interacción y Red (si aplica en el texto):
-   - Aptitudes: ¿Listó habilidades clave? ¿Tiene validaciones?
-   - Recomendaciones: ¿Recibió recomendaciones escritas?
+3. Aptitudes:
+   - ¿Tiene una cantidad sólida de aptitudes cargadas? Como referencia, LinkedIn permite hasta 100,
+     por lo que un perfil con menos de 15-20 aptitudes está subutilizando bastante esta sección.
+   - ¿Las aptitudes cargadas son relevantes respecto al perfil profesional al que aspira el
+     estudiante? Para evaluarlo, cruzalas con lo que se desprende del Titular, el Acerca de y la
+     Experiencia Laboral.
+   (Nota: No evalúes validaciones/endorsements de terceros ni recomendaciones escritas; el formato
+   PDF no permite verificar esa información de forma confiable, y no forman parte del checklist).
 
 REGLAS DE PUNTUACIÓN Y SEMÁFORO:
 1. Asigna un "puntaje_general" del 1 al 100 basado en el cumplimiento del checklist.
 2. El "color_semaforo" se calcula estrictamente: Verde (75-100), Amarillo (50-74), Rojo (0-49).
+
+CRITERIO PARA "punto_fuerte", "punto_critico" Y "proxima_accion" (MUY IMPORTANTE, LEÉ ESTO ANTES
+DE COMPLETAR EL JSON):
+- "punto_fuerte" NO es simplemente "la sección está presente" o "cumple lo mínimo esperable" (por
+  ejemplo, que el titular solo mencione la carrera y la universidad NO alcanza para ser un punto
+  fuerte). Solo cuenta como fuerte algo que va MÁS ALLÁ de lo básico: una narrativa con impacto
+  real, logros con métricas concretas, un uso de palabras clave claramente diferencial, etc. Si
+  ninguna sección del perfil alcanza ese nivel, no inventes un punto fuerte artificial: usá
+  literalmente el string "Sin puntos destacados en este perfil."
+- "punto_critico" tiene que ser el problema de MAYOR impacto para la empleabilidad del estudiante,
+  no cualquier detalle menor. Priorizá en este orden: (1) secciones fundamentales ausentes o vacías
+  (Acerca de, Experiencia Laboral), (2) contenido presente pero de baja calidad (sin métricas, sin
+  palabras clave), (3) detalles cosméticos (URL sin personalizar, aptitudes insuficientes). Si el
+  perfil no tiene ningún problema relevante, usá literalmente el string "Sin puntos críticos
+  relevantes."
+- "proxima_accion" tiene que derivarse DIRECTAMENTE del "punto_critico" que identificaste: es el
+  paso concreto e inmediato para resolver ESE problema puntual, no una lista genérica de tareas. Si
+  no hay puntos críticos, sugerí como mucho un ajuste menor de pulido, o usá literalmente el string
+  "Sin acciones prioritarias en este momento."
 
 ESTRUCTURA EXACTA DEL JSON:
 {
@@ -92,18 +117,22 @@ ESTRUCTURA EXACTA DEL JSON:
   "carrera_estudiante": "<nombre de la carrera detectada>",
   "puntaje_general": 0,
   "color_semaforo": "Verde, Amarillo o Rojo",
-  "observacion_principal": "• Fuerte: [El mayor acierto]\\n• Crítico: [El error más grave]\\n• Acción: [Paso inmediato a seguir]",
+  "punto_fuerte": "El mayor acierto del perfil, o 'Sin puntos destacados en este perfil.'",
+  "punto_critico": "El problema de mayor impacto, o 'Sin puntos críticos relevantes.'",
+  "proxima_accion": "El paso concreto derivado de punto_critico, o 'Sin acciones prioritarias en este momento.'",
   "evaluacion_detallada": {
     "titular": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
     "ubicacion_y_url": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
     "acerca_de": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
     "experiencia_laboral": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
     "educacion_y_certificaciones": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
-    "aptitudes_y_recomendaciones": {"estado": "Aprobado | No detectado", "comentario": "..."}
+    "aptitudes": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."}
   }
 }
 
-IMPORTANTE: "observacion_principal" debe ser un string único utilizando saltos de línea (\\n) y viñetas (•) para mantener la concisión, máximo 3 puntos.
+IMPORTANTE: "punto_fuerte", "punto_critico" y "proxima_accion" son tres campos de texto
+INDEPENDIENTES (no uses viñetas ni los combines en un solo string). Cada uno debe ser una o dos
+oraciones, concisas y directas.
 """
 
 # ==============================================================================
@@ -198,6 +227,33 @@ def extraer_texto_drive_en_memoria(servicio, file_id):
     except Exception as e:
         return None
 
+
+PATRON_URL_LINKEDIN = re.compile(
+    r'(https?://)?(www\.)?linkedin\.com/in/[A-Za-z0-9\-_%]+/?',
+    re.IGNORECASE
+)
+
+
+def extraer_url_perfil(texto_perfil):
+    """
+    Busca la URL de LinkedIn directo en el texto extraído del PDF (regex, NO depende de la IA,
+    para evitar que la transcriba mal). Devuelve la URL completa con https:// o None si no la
+    encuentra.
+    """
+    if not texto_perfil:
+        return None
+
+    coincidencia = PATRON_URL_LINKEDIN.search(texto_perfil)
+    if not coincidencia:
+        return None
+
+    url = coincidencia.group(0).rstrip('/')
+    if url.lower().startswith('http'):
+        return url
+    if url.lower().startswith('www.'):
+        return f"https://{url}"
+    return f"https://www.{url}"
+
 # ==============================================================================
 # MÓDULO 1B: GOOGLE DRIVE (Subcarpetas por fecha y movimiento de archivos)
 # ==============================================================================
@@ -285,12 +341,77 @@ def guardar_cache(cache):
         print(f"   [⚠️ No se pudo guardar la caché: {e}]")
 
 
-def calcular_hash_perfil(texto_perfil):
-    contenido = texto_perfil + INSTRUCCIONES_SISTEMA  # si cambian las instrucciones, cambia el hash
+def calcular_hash_perfil(texto_perfil, plan_de_estudios=None):
+    # Si cambian las instrucciones o el plan de estudios inyectado, cambia el hash (se re-analiza).
+    contenido = texto_perfil + INSTRUCCIONES_SISTEMA + (plan_de_estudios or "")
     return hashlib.sha256(contenido.encode('utf-8')).hexdigest()
 
 
 CACHE_ANALISIS = cargar_cache()
+
+# ==============================================================================
+# MÓDULO 1C: PRECLASIFICACIÓN DE CARRERA Y PLANES DE ESTUDIO (UdeSA)
+# ==============================================================================
+# Carpeta local con un archivo .txt por carrera (plan de estudios en texto plano). Se busca
+# relativa a donde corre el script. Creála en la raíz del repo, al mismo nivel que main.py:
+#
+#   planes_de_estudio/
+#     ingenieria_en_inteligencia_artificial.txt
+#     tecnologia_digital.txt
+#     ...
+#
+CARPETA_PLANES_DE_ESTUDIO = "planes_de_estudio"
+
+# Mapa de carreras de UdeSA: nombre canónico -> palabras clave para detectarla en el texto crudo
+# del PDF (sin usar IA) + nombre del archivo con su plan de estudios. Sumá una entrada nueva acá
+# por cada carrera para la que cargues un plan; si una carrera no está en este diccionario, el
+# perfil se analiza igual, pero sin el contexto extra del plan de estudios.
+CARRERAS_UDESA = {
+    "Ingeniería en Inteligencia Artificial": {
+        "palabras_clave": ["ingeniería en inteligencia artificial", "ingenieria en inteligencia artificial", "ingenieria en IA"],
+        "archivo_plan": "ingenieria_en_inteligencia_artificial.txt",
+    },
+    "Tecnología Digital": {
+        "palabras_clave": ["tecnología digital", "tecnologia digital"],
+        "archivo_plan": "tecnologia_digital.txt",
+    },
+    # TODO: agregar acá el resto de las carreras de UdeSA que se desee cubrir
+}
+
+
+def detectar_carrera_por_keywords(texto_perfil):
+    """
+    Busca coincidencias de carreras oficiales de UdeSA directo en el texto crudo del PDF
+    (sin usar IA, para no gastar una llamada extra). Devuelve el nombre canónico de la carrera
+    si encuentra una coincidencia, o None si no reconoce ninguna.
+    """
+    if not texto_perfil:
+        return None
+
+    texto_normalizado = texto_perfil.lower()
+    for nombre_carrera, datos in CARRERAS_UDESA.items():
+        for palabra_clave in datos["palabras_clave"]:
+            if palabra_clave.lower() in texto_normalizado:
+                return nombre_carrera
+    return None
+
+
+def cargar_plan_de_estudios(nombre_carrera):
+    """Lee el archivo .txt del plan de estudios de la carrera detectada, si existe."""
+    if not nombre_carrera or nombre_carrera not in CARRERAS_UDESA:
+        return None
+
+    ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, CARRERAS_UDESA[nombre_carrera]["archivo_plan"])
+    if not os.path.exists(ruta):
+        return None
+
+    try:
+        with open(ruta, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        print(f"   [⚠️ No se pudo leer el plan de estudios de '{nombre_carrera}': {e}]")
+        return None
+
 
 # ==============================================================================
 # MÓDULO 2: MULTI-PROVEEDOR IA (Gemini → Groq → NVIDIA con backoff y caché)
@@ -377,14 +498,30 @@ def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3
 
 
 def analizar_perfil_con_ia(texto_perfil, fecha_hoy):
-    """Orquestador: caché → Gemini → Groq → NVIDIA."""
+    """Orquestador: preclasificación de carrera → caché → Gemini → Groq → NVIDIA."""
 
-    hash_perfil = calcular_hash_perfil(texto_perfil)
+    carrera_detectada = detectar_carrera_por_keywords(texto_perfil)
+    plan_de_estudios = cargar_plan_de_estudios(carrera_detectada) if carrera_detectada else None
+
+    hash_perfil = calcular_hash_perfil(texto_perfil, plan_de_estudios)
     if hash_perfil in CACHE_ANALISIS:
         print("   [💾 Resultado obtenido de caché, no se llamó a ninguna IA.]")
         return CACHE_ANALISIS[hash_perfil]
 
     instrucciones_con_fecha = INSTRUCCIONES_SISTEMA.replace("{FECHA_ACTUAL}", fecha_hoy)
+
+    if plan_de_estudios:
+        print(f"   [🎓 Plan de estudios detectado: {carrera_detectada}]")
+        instrucciones_con_fecha += (
+            "\n\nPLAN DE ESTUDIOS DE REFERENCIA (es material de contexto sobre la carrera del "
+            "estudiante; NO lo evalúes ni lo menciones directamente, usalo solo para juzgar si el "
+            f"perfil refleja competencias acordes a su carrera):\n{plan_de_estudios}"
+        )
+    elif carrera_detectada:
+        print(f"   [ℹ️ Carrera detectada ('{carrera_detectada}') pero sin plan de estudios cargado todavía.]")
+    else:
+        print("   [ℹ️ No se pudo preclasificar la carrera por keywords; se analiza sin plan de estudios.]")
+
     prompt = f"{instrucciones_con_fecha}\n\nPERFIL DEL ESTUDIANTE:\n{texto_perfil}"
 
     for proveedor in ORDEN_PROVEEDORES:
@@ -462,8 +599,110 @@ def obtener_o_crear_hoja_diaria(servicio_sheets, spreadsheet_id, fecha_iso):
     return fecha_iso
 
 
+# --- Columnas de la Observación (0-indexadas) en cada hoja, con la columna URL nueva entre
+# Nombre y Carrera. OJO: esto asume que ya agregaste la columna URL a mano en 'Plantilla' e
+# 'Histórico', entre Nombre y Carrera, y corriste el "Volver a los datos sin formato" si hacía
+# falta. Si el orden de columnas termina siendo otro, avisame para ajustar estos índices.
+COLUMNA_OBSERVACION_DIARIA = 6      # G: Apellido, Nombre, URL, Carrera, Puntaje, Semáforo, Observación
+COLUMNA_OBSERVACION_HISTORICO = 7   # H: Fecha, Apellido, Nombre, URL, Carrera, Puntaje, Semáforo, Observación
+
+ETIQUETA_FUERTE = "Punto Fuerte: "
+ETIQUETA_CRITICO = "Punto Crítico: "
+ETIQUETA_ACCION = "Próxima Acción: "
+
+
+def _construir_texto_observacion(resultado):
+    """Arma el texto de la columna Observación a partir de los 3 campos separados de la IA."""
+    fuerte = resultado.get('punto_fuerte') or 'Sin puntos destacados en este perfil.'
+    critico = resultado.get('punto_critico') or 'Sin puntos críticos relevantes.'
+    accion = resultado.get('proxima_accion') or 'Sin acciones prioritarias en este momento.'
+    return f"{ETIQUETA_FUERTE}{fuerte}\n{ETIQUETA_CRITICO}{critico}\n{ETIQUETA_ACCION}{accion}"
+
+
+def _construir_runs_negrita(texto):
+    """Arma los textFormatRuns para poner en negrita las 3 etiquetas fijas dentro del texto."""
+    idx_critico = texto.index(ETIQUETA_CRITICO)
+    idx_accion = texto.index(ETIQUETA_ACCION)
+    return [
+        {"startIndex": 0, "format": {"bold": True}},
+        {"startIndex": len(ETIQUETA_FUERTE), "format": {"bold": False}},
+        {"startIndex": idx_critico, "format": {"bold": True}},
+        {"startIndex": idx_critico + len(ETIQUETA_CRITICO), "format": {"bold": False}},
+        {"startIndex": idx_accion, "format": {"bold": True}},
+        {"startIndex": idx_accion + len(ETIQUETA_ACCION), "format": {"bold": False}},
+    ]
+
+
+def _construir_celda_url(url_perfil):
+    """
+    Celda con hipervínculo al perfil. OJO: usa ';' como separador de argumentos, que es el
+    habitual en hojas con configuración regional en español. Si tu Sheet está en otra
+    configuración regional y la fórmula aparece como error, avisame y cambio a ','.
+    """
+    if url_perfil:
+        return f'=HYPERLINK("{url_perfil}";"Ver perfil")'
+    return "Sin URL detectada"
+
+
+def _parsear_fila_inicio(rango_actualizado):
+    """Extrae el número de fila inicial de un string tipo "'2026-07-29'!A2:G6"."""
+    coincidencia = re.search(r'![A-Za-z]+(\d+):', rango_actualizado)
+    return int(coincidencia.group(1)) if coincidencia else None
+
+
+def _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, nombre_hoja):
+    hojas = _obtener_metadata_hojas(servicio_sheets, spreadsheet_id)
+    for hoja in hojas:
+        if hoja['title'] == nombre_hoja:
+            return hoja['sheetId']
+    return None
+
+
+def _aplicar_negrita_observaciones(servicio_sheets, spreadsheet_id, sheet_id, fila_inicio,
+                                     lista_resultados, indice_columna):
+    """
+    Segunda pasada: sobrescribe la columna de Observación con texto + textFormatRuns para que
+    las etiquetas queden en negrita. values().append() no soporta formato por caracter, por eso
+    hace falta este batchUpdate aparte, apuntando a las filas recién escritas.
+    """
+    filas_grid = []
+    for resultado in lista_resultados:
+        texto = _construir_texto_observacion(resultado)
+        filas_grid.append({
+            "values": [{
+                "userEnteredValue": {"stringValue": texto},
+                "textFormatRuns": _construir_runs_negrita(texto)
+            }]
+        })
+
+    peticion = {
+        'requests': [{
+            'updateCells': {
+                'rows': filas_grid,
+                'fields': 'userEnteredValue,textFormatRuns',
+                'range': {
+                    'sheetId': sheet_id,
+                    'startRowIndex': fila_inicio - 1,
+                    'endRowIndex': fila_inicio - 1 + len(lista_resultados),
+                    'startColumnIndex': indice_columna,
+                    'endColumnIndex': indice_columna + 1
+                }
+            }
+        }]
+    }
+
+    try:
+        servicio_sheets.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=peticion).execute()
+    except Exception as e:
+        print(f"   [⚠️ No se pudo aplicar negrita a las observaciones: {e}]")
+
+
 def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, nombre_hoja):
-    """Agrega las filas del día a la hoja diaria (6 columnas: Apellido, Nombre, Carrera, Puntaje, Semáforo, Observación)."""
+    """
+    Agrega las filas del día a la hoja diaria (7 columnas: Apellido, Nombre, URL, Carrera,
+    Puntaje, Semáforo, Observación). Requiere que 'Plantilla' ya tenga la columna URL agregada
+    entre Nombre y Carrera.
+    """
     print(f"\nEscribiendo datos en la hoja '{nombre_hoja}'...")
 
     valores = []
@@ -471,33 +710,42 @@ def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, no
         fila = [
             resultado.get('apellido_estudiante', ''),
             resultado.get('nombre_estudiante', 'Desconocido'),
+            _construir_celda_url(resultado.get('url_perfil')),
             resultado.get('carrera_estudiante', 'No especificado'),
             resultado.get('puntaje_general', 0),
             resultado.get('color_semaforo', 'Error'),
-            resultado.get('observacion_principal', 'Sin observaciones.')
+            _construir_texto_observacion(resultado)
         ]
         valores.append(fila)
 
     cuerpo = {'values': valores}
     # Rango con el nombre de hoja entre comillas simples: soporta nombres con espacios/tildes.
-    rango = f"'{nombre_hoja}'!A2:F"
+    rango = f"'{nombre_hoja}'!A2:G"
 
     try:
-        resultado = servicio_sheets.spreadsheets().values().append(
+        resultado_append = servicio_sheets.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
             range=rango,
             valueInputOption='USER_ENTERED',
             body=cuerpo
         ).execute()
 
-        filas_actualizadas = resultado.get('updates').get('updatedCells')
+        filas_actualizadas = resultado_append.get('updates').get('updatedCells')
         print(f"✅ ¡Éxito! Se actualizaron {filas_actualizadas} celdas en '{nombre_hoja}'.")
+
+        fila_inicio = _parsear_fila_inicio(resultado_append['updates']['updatedRange'])
+        sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, nombre_hoja)
+        if fila_inicio and sheet_id is not None:
+            _aplicar_negrita_observaciones(
+                servicio_sheets, spreadsheet_id, sheet_id, fila_inicio,
+                lista_resultados, COLUMNA_OBSERVACION_DIARIA
+            )
     except Exception as e:
         print(f"Error al escribir en Sheets: {e}")
 
 
 def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy):
-    """Agrega las filas del día a la hoja fija 'Histórico' (7 columnas, Fecha en A)."""
+    """Agrega las filas del día a la hoja fija 'Histórico' (8 columnas, Fecha en A, URL en D)."""
     print(f"Escribiendo datos en '{NOMBRE_HOJA_HISTORICO}'...")
 
     valores = []
@@ -506,26 +754,35 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
             fecha_hoy,
             resultado.get('apellido_estudiante', ''),
             resultado.get('nombre_estudiante', 'Desconocido'),
+            _construir_celda_url(resultado.get('url_perfil')),
             resultado.get('carrera_estudiante', 'No especificado'),
             resultado.get('puntaje_general', 0),
             resultado.get('color_semaforo', 'Error'),
-            resultado.get('observacion_principal', 'Sin observaciones.')
+            _construir_texto_observacion(resultado)
         ]
         valores.append(fila)
 
     cuerpo = {'values': valores}
-    rango = f"'{NOMBRE_HOJA_HISTORICO}'!A2:G"
+    rango = f"'{NOMBRE_HOJA_HISTORICO}'!A2:H"
 
     try:
-        resultado = servicio_sheets.spreadsheets().values().append(
+        resultado_append = servicio_sheets.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
             range=rango,
             valueInputOption='USER_ENTERED',
             body=cuerpo
         ).execute()
 
-        filas_actualizadas = resultado.get('updates').get('updatedCells')
+        filas_actualizadas = resultado_append.get('updates').get('updatedCells')
         print(f"✅ ¡Éxito! Se actualizaron {filas_actualizadas} celdas en '{NOMBRE_HOJA_HISTORICO}'.")
+
+        fila_inicio = _parsear_fila_inicio(resultado_append['updates']['updatedRange'])
+        sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, NOMBRE_HOJA_HISTORICO)
+        if fila_inicio and sheet_id is not None:
+            _aplicar_negrita_observaciones(
+                servicio_sheets, spreadsheet_id, sheet_id, fila_inicio,
+                lista_resultados, COLUMNA_OBSERVACION_HISTORICO
+            )
     except Exception as e:
         print(f"Error al escribir en '{NOMBRE_HOJA_HISTORICO}': {e}")
 
@@ -552,10 +809,13 @@ def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
         "NOMBRE_ESTUDIANTE": datos_alumno.get('nombre_estudiante', 'Desconocido'),
         "APELLIDO_ESTUDIANTE": datos_alumno.get('apellido_estudiante', ''),
         "CARRERA_ESTUDIANTE": datos_alumno.get('carrera_estudiante', 'No especificado'),
+        "URL_PERFIL": datos_alumno.get('url_perfil') or "No detectada",
         "FECHA_INFORME": fecha_hoy,
         "PUNTAJE_GENERAL": str(datos_alumno.get('puntaje_general', 0)),
         "COLOR_SEMAFORO": datos_alumno.get('color_semaforo', 'Desconocido'),
-        "OBSERVACION_PRINCIPAL": datos_alumno.get('observacion_principal', ''),
+        "PUNTO_FUERTE": datos_alumno.get('punto_fuerte', 'Sin puntos destacados en este perfil.'),
+        "PUNTO_CRITICO": datos_alumno.get('punto_critico', 'Sin puntos críticos relevantes.'),
+        "PROXIMA_ACCION": datos_alumno.get('proxima_accion', 'Sin acciones prioritarias en este momento.'),
 
         "ESTADO_TITULAR": estado('titular'),
         "COMENTARIO_TITULAR": comentario('titular'),
@@ -572,8 +832,8 @@ def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
         "ESTADO_EDUCACION_CERTIFICACIONES": estado('educacion_y_certificaciones'),
         "COMENTARIO_EDUCACION_CERTIFICACIONES": comentario('educacion_y_certificaciones'),
 
-        "ESTADO_APTITUDES_RECOMENDACIONES": estado('aptitudes_y_recomendaciones'),
-        "COMENTARIO_APTITUDES_RECOMENDACIONES": comentario('aptitudes_y_recomendaciones'),
+        "ESTADO_APTITUDES": estado('aptitudes'),
+        "COMENTARIO_APTITUDES": comentario('aptitudes'),
     }
 
 
@@ -694,8 +954,10 @@ if __name__ == "__main__":
 
             # Paso B: Mandar a la IA
             if texto:
+                url_perfil = extraer_url_perfil(texto)
                 analisis_json = analizar_perfil_con_ia(texto, fecha_hoy)
                 if analisis_json:
+                    analisis_json['url_perfil'] = url_perfil
                     resultados_finales.append(analisis_json)
                     print(f"✅ Análisis completado para: {analisis_json.get('nombre_estudiante', 'Desconocido')}")
 
