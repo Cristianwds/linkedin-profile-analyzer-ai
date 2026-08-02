@@ -466,7 +466,7 @@ CARRERAS_UDESA = {
         "archivo_plan": "ingenieria_en_inteligencia_artificial.txt",
     },
     "Licenciatura en Negocios Digitales": {
-        "palabras_clave": ["negocios digitales", "tecnología digital"],
+        "palabras_clave": ["negocios digitales"],
         "archivo_plan": "negocios_digitales.txt",
     },
     "Licenciatura en Ciencias del Comportamiento": {
@@ -476,8 +476,12 @@ CARRERAS_UDESA = {
     "Licenciatura en Economía": {
         "palabras_clave": ["licenciatura en economia", "licenciatura en economía"],
         "archivo_plan": "economia.txt",
-    }
-    # TODO: agregar acá el resto de las carreras de UdeSA que quieras cubrir.
+    },
+    "Ingeniería en Biotecnología": {
+        "palabras_clave": ["ingeniería en biotecnología", "ingenieria en biotecnologia"],
+        "archivo_plan": "ingenieria_en_biotecnologia.txt",
+    },
+    # TODO: agregar acá el resto de las carreras de UdeSA se desee cubrir
 }
 
 

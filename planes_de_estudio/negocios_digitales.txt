@@ -1,0 +1,55 @@
+LICENCIATURA EN NEGOCIOS DIGITALES
+
+PRIMER AÑO
+- Tecnología y Cultura Digital
+- Introducción al Razonamiento Matemático
+- Fundamentos de Administración
+- Economía I
+- Introducción al Pensamiento Computacional
+- Cálculo
+- Tecnología de desarrollo front end
+- Escritura y Oratoria
+- Electiva de Historia
+
+SEGUNDO AÑO
+- Algebra
+- Diseño y Experiencia de Usuario
+- Electiva de Filosofía
+- Derechos Fundamentales
+- Matemática aplicada a los negocios
+- Ideación de Productos Digitales
+- Electiva Ciencia
+- Juegos y Comportamiento Estratégico
+- Gestión de equipos
+
+TERCER AÑO
+- Estadística I
+- Gestión y Arquitectura de datos
+- Marketing
+- Operaciones y sistemas
+- Estadística Aplicada a los negocios
+- Marketing Digital
+- Información Financiera
+- Estrategia de Empresas
+
+CUARTO AÑO
+- Investigación Operativa
+- Administración Financiera
+- Entrepreneurship
+- Analítica de Datos
+- Ciencia de Datos
+- Tecnologías de desarrollo móvil
+- Finanzas corporativas
+- Optativa II
+
+QUINTO AÑO
+- Derecho de los Contratos y Propiedad Intelectual
+- Estrategia impositiva
+- Taller Trabajo de Graduación
+- Optativa I
+- Optativa III
+
+NOTAS
+- (*1) Materias que se ofrecen solo en el primer semestre.
+- (*2) Materias que se ofrecen solo en el segundo semestre.
+- (*F) Cursos del bloque de materias optativas del Ciclo de Fundamentos. La oferta podrá ser modificada cada semestre por la dirección de la carrera.

@@ -1,0 +1,56 @@
+INGENIERÍA EN BIOTECNOLOGÍA
+
+PRIMER AÑO
+- Análisis Matemático I
+- Biología General
+- Química General
+- Electiva de Ciencias
+- Algebra Lineal
+- Pensamiento Computacional
+- Química II
+- Electiva de Historia
+
+SEGUNDO AÑO
+- Análisis Matemático II
+- Bioquímica I
+- Genética
+- Electiva de Filosofía
+- Bioinformática I
+- Bioquímica II
+- Microbiología General
+- Física I
+
+TERCER AÑO
+- Ingeniería Genética
+- Fisicoquímica
+- Biología Molecular y Celular
+- Economía I
+- Física II
+- Química analítica
+- Bioprocesos I
+- Derechos Fundamentales
+
+CUARTO AÑO
+- Probabilidad y Estadística
+- Bioprocesos II
+- Inmunología
+- Escritura y Oratoria
+- Fisiología y Genética de Microorganismos
+- Inteligencia Artificial Aplicada
+- Bioprocesos III
+- Control y Automatización de Procesos Biotecnológicos
+
+QUINTO AÑO
+- Fundamentos de la Ética y Regulación de la Biotecnología
+- Administración y Emprendedorismo
+- Optativa I
+- Optativa II
+- Taller de Proyecto Final
+- Calidad, Seguridad Ambiental e Higiene
+- Optativa III
+- Optativa IV
+- Práctica profesional supervisada
+
+NOTAS
+- La carrera se estructura en un Ciclo de Fundamentos y distintos Ciclos de Orientación (Ciencias básicas y de la vida; Procesos industriales y Biotecnología aplicada; Matemáticas y herramientas de programación; Proyecto Final y Práctica Profesional).
+- El plan contempla materias electivas y optativas a lo largo de los años de cursada.
