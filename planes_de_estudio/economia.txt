@@ -1,0 +1,47 @@
+LICENCIATURA EN ECONOMÍA
+
+PRIMER AÑO
+- Economía I
+- Introducción al Razonamiento Matemático
+- Introducción al Pensamiento Computacional
+- Fundamentos de Administración (optativa en inglés)
+- Historia Económica
+- Cálculo I
+- Álgebra
+- Escritura
+
+SEGUNDO AÑO
+- Microeconomía I
+- Estadística I
+- Cálculo II
+- Electiva de Ciencias
+- Macroeconomía I
+- Microeconomía II
+- Estadística II
+- Electiva de Historia
+
+TERCER AÑO
+- Macroeconomía II
+- Finanzas Públicas
+- Econometría
+- Derechos Fundamentales (*F)
+- Economía Internacional
+- Economía Monetaria
+- Economía Aplicada
+- Electiva de Filosofía
+
+CUARTO AÑO
+- Materia Optativa I
+- Materia Optativa II
+- Materia Optativa III
+- Materia Optativa IV
+- Materia Optativa V
+- Materia Optativa VI
+- Materia Optativa VII
+- Taller Trabajo de Graduación
+
+NOTAS
+- (*1) Materias ofrecidas solo en el primer semestre.
+- (*2) Materias ofrecidas solo en el segundo semestre.
+- (*3) Materias ofrecidas solo en el segundo semestre del primer año o en el primer semestre del segundo año.
+- (*F) Cursos del bloque de optativas del Ciclo de Fundamentos. La oferta puede cambiar cada semestre.

@@ -5,6 +5,7 @@ import pdfplumber
 import re
 import time
 import hashlib
+import unicodedata
 
 from datetime import date
 
@@ -66,29 +67,79 @@ DATOS A EXTRAER (no son parte del checklist, son datos factuales del perfil):
      formal. Si Educación es ambigua o no aparece, usá lo que diga el Titular o el Extracto.
 
 CRITERIOS DE EVALUACIÓN (CHECKLIST UDESA):
+Para cada sección de "evaluacion_detallada", el "comentario" no debe ser solo diagnóstico: cuando
+corresponda, sugerí concretamente qué podría agregar, cambiar o reordenar el estudiante (esto es
+especialmente importante en Titular y Aptitudes, donde se detalla abajo qué tipo de sugerencia se
+espera).
+Si más abajo, después de este checklist, se incluye un bloque "PLAN DE ESTUDIOS DE REFERENCIA",
+tenelo en cuenta como contexto adicional en toda la evaluación (no armes una sección aparte para
+comentarlo, ni lo evalúes en sí mismo): usalo para enriquecer tus sugerencias en Titular y
+Aptitudes en particular, y para juzgar si la Experiencia Laboral y el Acerca de son coherentes
+con la formación de esa carrera. Si no se incluye ese bloque, evaluá con el resto de la
+información del perfil normalmente, sin mencionar su ausencia.
+
 1. Fundamentales:
-   - Titular: ¿Es descriptivo, incluye palabras clave y comunica valor?
-   - Ubicación: ¿Está actualizada?
-   - URL: ¿Tiene un formato limpio y personalizado?
+   - Titular (Headline): ¿Es descriptivo, incluye palabras clave y comunica una propuesta de
+     valor real, no solo el puesto o rol actual? Un buen titular suele combinar varios de estos
+     elementos (no hace falta que tenga todos): rol real o aspiracional, ámbito de interés o
+     expertise, propuesta de valor, palabras clave del sector, hard/technical skills,
+     certificaciones o cursos relevantes, propósito profesional. En el "comentario", además de
+     evaluar, sugerí concretamente qué estructura, conceptos o palabras podría incorporar el
+     estudiante, basándote en el resto del perfil (Acerca de, Experiencia, Educación). y, si está
+     disponible, en el PLAN DE ESTUDIOS DE REFERENCIA de su carrera.
+     (Si el perfil no tiene ningún titular más allá del nombre de la persona, usá el estado 
+     'No detectado' en vez de 'A Mejorar'.)
+   - Ubicación: ¿Está presente?
+   - URL: ¿Tiene un formato limpio y personalizado? No hace falta que sea literalmente
+     "nombre-apellido" (linkedin.com/in/nombreapellido es solo un ejemplo posible); lo que
+     importa es que NO sea la combinación de letras y números que asigna LinkedIn por defecto, y
+     que se note que fue editada/personalizada.
    (Nota: Ignora Foto de Perfil y Banner, el formato PDF no las incluye).
 
 2. Contenido y Experiencia:
-   - Acerca de: ¿Es una narrativa convincente, optimizada y con llamado a la acción?
-   - Experiencia Laboral: ¿Usa verbos de acción y métricas/logros en lugar de solo tareas?
-   - Educación: ¿Está completa y relevante?
-   - Certificaciones: ¿Añadió credenciales importantes?
+   - Acerca de: ¿Es una narrativa convincente, optimizada con palabras clave y con un llamado a
+     la acción claro al cierre? Idealmente el contenido toca estas tres partes (no hace falta que
+     estén separadas explícitamente en el texto): (1) Quién sos — rol y/o formación actual;
+     (2) Qué podés ofrecer — tu propuesta de valor: habilidades, proyectos y experiencias;
+     (3) Hacia dónde vas — tu foco profesional, qué te apasiona, tus intereses.
+     (Si el perfil no tiene ningún texto en la sección Acerca de, usá el estado 'No detectado' 
+     en vez de 'A Mejorar'.)
+   - Experiencia Laboral: Evaluá esto por cada puesto listado, no solo en general:
+     (a) ¿Describe logros con verbos de acción y métricas/datos concretos, en vez de ser solo un
+         listado de tareas o responsabilidades?
+     (b) ¿La forma en que está redactada la experiencia es relevante respecto al rol real o
+         aspiracional que se desprende del Titular? Si el Titular es demasiado genérico o
+         incompleto como para inferir un rol target, indicá dentro del "comentario" que este
+         punto "no se puede evaluar" por esa razón — no penalices el puntaje solo por esto.
+
+   - Educación: ¿Está completa (se detalla el título obtenido o el nombre completo de la
+     carrera, no solo "Universidad de San Andrés" sin especificar)? ¿Incluye la formación en
+     UdeSA? Este último punto es EXCLUYENTE: si no aparecen mencionados los estudios en UdeSA,
+     marcá esta sección como "A Mejorar" sin importar qué tan completo esté el resto del detalle.
+     Limitate a educación formal (grado, posgrado; el secundario/bachillerato es opcional y no
+     resta si no aparece).
+   - Certificaciones: ¿Se agregaron credenciales relevantes y actualizadas (o cursos, que en
+     algunos perfiles aparecen en una sección separada llamada "Cursos")? A diferencia de
+     Educación, esta sección es un PLUS, no excluyente: si no aparece ninguna certificación ni
+     curso, usá el estado "No detectado" (no es en sí mismo un problema grave). (Nota: evalúa: 
+     nombre, vigencia si se menciona, relevancia para el perfil profesional.)
 
 3. Aptitudes:
-   - ¿Tiene una cantidad sólida de aptitudes cargadas? Como referencia, LinkedIn permite hasta 100,
-     por lo que un perfil con menos de 15-20 aptitudes está subutilizando bastante esta sección.
-   - ¿Las aptitudes cargadas son relevantes respecto al perfil profesional al que aspira el
-     estudiante? Para evaluarlo, cruzalas con lo que se desprende del Titular, el Acerca de y la
-     Experiencia Laboral.
-   (Nota: No evalúes validaciones/endorsements de terceros ni recomendaciones escritas; el formato
-   PDF no permite verificar esa información de forma confiable, y no forman parte del checklist).
-
+   - ¿Tiene al menos 50 aptitudes cargadas y relevantes? 
+   - ¿Las aptitudes están ordenadas de forma estratégica? LinkedIn permite destacar/fijar las
+     principales; evaluá si las que aparecen primero son las más relevantes respecto al Titular,
+     el Acerca de, la Experiencia detallada y los puestos a los que aspira el estudiante, o si
+     convendría reordenarlas.
+   - En el "comentario", además de evaluar, sugerí concretamente 2 a 4 aptitudes que NO estén
+     listadas pero que se puedan inferir razonablemente del resto del perfil (Titular, Acerca de,
+     Experiencia) y, si está disponible, del PLAN DE ESTUDIOS DE REFERENCIA de su carrera. Si
+     convendría reordenarlas, proponé el orden apropiado.
+    (Nota: No evalúes validaciones/endorsements de terceros en las aptitudes; el formato PDF no
+    permite verificarlas de forma confiable.)
 REGLAS DE PUNTUACIÓN Y SEMÁFORO:
-1. Asigna un "puntaje_general" del 1 al 100 basado en el cumplimiento del checklist.
+1. Asigna un "puntaje_general" del 1 al 100 basado ÚNICAMENTE en el cumplimiento del checklist de
+   arriba (secciones 1, 2 y 3). El bloque "analisis_bonus" (más abajo) es puramente informativo:
+   ninguno de sus campos debe influir en el "puntaje_general" ni en el "color_semaforo".
 2. El "color_semaforo" se calcula estrictamente: Verde (75-100), Amarillo (50-74), Rojo (0-49).
 
 CRITERIO PARA "punto_fuerte", "punto_critico" Y "proxima_accion" (MUY IMPORTANTE, LEÉ ESTO ANTES
@@ -101,14 +152,32 @@ DE COMPLETAR EL JSON):
   literalmente el string "Sin puntos destacados en este perfil."
 - "punto_critico" tiene que ser el problema de MAYOR impacto para la empleabilidad del estudiante,
   no cualquier detalle menor. Priorizá en este orden: (1) secciones fundamentales ausentes o vacías
-  (Acerca de, Experiencia Laboral), (2) contenido presente pero de baja calidad (sin métricas, sin
-  palabras clave), (3) detalles cosméticos (URL sin personalizar, aptitudes insuficientes). Si el
-  perfil no tiene ningún problema relevante, usá literalmente el string "Sin puntos críticos
-  relevantes."
+  (Acerca de, Experiencia Laboral, no tener UdeSA en Educación), (2) contenido presente pero de baja
+  calidad (sin métricas, sin palabras clave), (3) detalles cosméticos (URL sin personalizar,
+  aptitudes insuficientes). Si el perfil no tiene ningún problema relevante, usá literalmente el
+  string "Sin puntos críticos relevantes."
 - "proxima_accion" tiene que derivarse DIRECTAMENTE del "punto_critico" que identificaste: es el
   paso concreto e inmediato para resolver ESE problema puntual, no una lista genérica de tareas. Si
   no hay puntos críticos, sugerí como mucho un ajuste menor de pulido, o usá literalmente el string
   "Sin acciones prioritarias en este momento."
+
+CRITERIO PARA "analisis_bonus" (INFORMATIVO, NO AFECTA EL PUNTAJE NI EL SEMÁFORO):
+- "recomendaciones": indicá si el perfil tiene recomendaciones escritas de colegas, managers o
+  clientes, e idealmente si llega a 2-3 o más. Es un dato complementario, no un déficit grave si
+  falta.
+- "secciones_adicionales": mencioná cualquier sección extra que sume valor o personalización más
+  allá del checklist básico (por ejemplo: Idiomas, Proyectos, Voluntariados, Publicaciones,
+  Cursos, Logros/Honores). Si no encontrás ninguna, indicalo brevemente ("No se detectan
+  secciones adicionales.").
+- "consistencia_idioma": revisá la sección "Idiomas" del perfil. SOLO si declara un nivel de
+  Inglés de "Competencia profesional completa" o "Competencia bilingüe o nativa", aplicá este
+  criterio (si no declara ese nivel, escribí "No aplica: no se declara un nivel avanzado de
+  inglés."): si el perfil (tal como está en este PDF) está mayormente en español, recomendá
+  armar también una versión del perfil en inglés (aclarando que esto es una recomendación basada
+  en lo que muestra este PDF puntual, ya que no se puede verificar si el estudiante ya tiene una
+  versión en inglés configurada aparte). Si el perfil ya está mayormente en inglés, en cambio,
+  revisá que TODAS las secciones estén en ese idioma de forma consistente, y marcá si encontrás
+  alguna sección mezclada en español.
 
 ESTRUCTURA EXACTA DEL JSON:
 {
@@ -121,18 +190,25 @@ ESTRUCTURA EXACTA DEL JSON:
   "punto_critico": "El problema de mayor impacto, o 'Sin puntos críticos relevantes.'",
   "proxima_accion": "El paso concreto derivado de punto_critico, o 'Sin acciones prioritarias en este momento.'",
   "evaluacion_detallada": {
-    "titular": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
-    "ubicacion_y_url": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
-    "acerca_de": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
-    "experiencia_laboral": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
-    "educacion_y_certificaciones": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
+    "titular": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
+    "ubicacion": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
+    "url": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
+    "acerca_de": "acerca_de": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
+    "experiencia_laboral": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
+    "educacion": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
+    "certificaciones": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
     "aptitudes": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."}
+  },
+  "analisis_bonus": {
+    "recomendaciones": "...",
+    "secciones_adicionales": "..."
   }
 }
 
 IMPORTANTE: "punto_fuerte", "punto_critico" y "proxima_accion" son tres campos de texto
 INDEPENDIENTES (no uses viñetas ni los combines en un solo string). Cada uno debe ser una o dos
-oraciones, concisas y directas.
+oraciones, concisas y directas. Los campos de "analisis_bonus" son igual de concisos, pero NUNCA
+deben afectar "puntaje_general" ni "color_semaforo".
 """
 
 # ==============================================================================
@@ -208,6 +284,13 @@ def listar_pdfs_en_carpeta(servicio, folder_id):
 
 
 def extraer_texto_drive_en_memoria(servicio, file_id):
+    """
+    Descarga el PDF y devuelve (texto_completo, url_perfil).
+    La URL se busca primero entre los hipervínculos reales embebidos en el PDF (mucho más
+    confiable que el texto: no depende de que el texto visible se haya partido en dos líneas
+    al extraerlo, ni de errores de tipografía/kerning). Si el PDF no tiene un hipervínculo de
+    LinkedIn embebido, se cae a un regex sobre el texto extraído como respaldo.
+    """
     try:
         request = servicio.files().get_media(fileId=file_id)
         archivo_memoria = io.BytesIO()
@@ -218,18 +301,29 @@ def extraer_texto_drive_en_memoria(servicio, file_id):
 
         archivo_memoria.seek(0)
         texto_completo = ""
+        url_perfil = None
         with pdfplumber.open(archivo_memoria) as pdf:
             for pagina in pdf.pages:
                 texto_extraido = pagina.extract_text()
                 if texto_extraido:
                     texto_completo += texto_extraido + "\n"
-        return texto_completo
-    except Exception as e:
-        return None
 
+                if not url_perfil:
+                    for hipervinculo in pagina.hyperlinks:
+                        uri = (hipervinculo.get('uri') or '')
+                        if 'linkedin.com/in/' in uri.lower():
+                            url_perfil = uri
+                            break
+
+        if not url_perfil:
+            url_perfil = extraer_url_perfil(texto_completo)  # respaldo por regex sobre el texto
+
+        return texto_completo, url_perfil
+    except Exception as e:
+        return None, None
 
 PATRON_URL_LINKEDIN = re.compile(
-    r'(https?://)?(www\.)?linkedin\.com/in/[A-Za-z0-9\-_%]+/?',
+    r'(https?://)?(www\.)?linkedin\.com/in/[A-Za-z0-9\-_%.]+/?',
     re.IGNORECASE
 )
 
@@ -368,30 +462,42 @@ CARPETA_PLANES_DE_ESTUDIO = "planes_de_estudio"
 # perfil se analiza igual, pero sin el contexto extra del plan de estudios.
 CARRERAS_UDESA = {
     "Ingeniería en Inteligencia Artificial": {
-        "palabras_clave": ["ingeniería en inteligencia artificial", "ingenieria en inteligencia artificial", "ingenieria en IA"],
+        "palabras_clave": ["ingeniería en inteligencia artificial", "ingeniería en ia"],
         "archivo_plan": "ingenieria_en_inteligencia_artificial.txt",
     },
-    "Tecnología Digital": {
-        "palabras_clave": ["tecnología digital", "tecnologia digital"],
-        "archivo_plan": "tecnologia_digital.txt",
+    "Licenciatura en Negocios Digitales": {
+        "palabras_clave": ["negocios digitales", "tecnología digital"],
+        "archivo_plan": "negocios_digitales.txt",
     },
-    # TODO: agregar acá el resto de las carreras de UdeSA que se desee cubrir
+    "Licenciatura en Ciencias del Comportamiento": {
+        "palabras_clave": ["ciencias del comportamiento"],
+        "archivo_plan": "ciencias_del_comportamiento.txt",
+    },
+    "Licenciatura en Economía": {
+        "palabras_clave": ["licenciatura en economia", "licenciatura en economía"],
+        "archivo_plan": "economia.txt",
+    }
+    # TODO: agregar acá el resto de las carreras de UdeSA que quieras cubrir.
 }
 
 
+def _normalizar_texto(texto):
+    """Minúsculas y sin tildes, para que el matching de keywords no dependa de cómo haya
+    quedado el acento tras la extracción del PDF (evita duplicar cada keyword con y sin
+    tilde a mano)."""
+    texto = texto.lower()
+    texto_sin_tildes = unicodedata.normalize('NFKD', texto)
+    return ''.join(c for c in texto_sin_tildes if not unicodedata.combining(c))
+
+
 def detectar_carrera_por_keywords(texto_perfil):
-    """
-    Busca coincidencias de carreras oficiales de UdeSA directo en el texto crudo del PDF
-    (sin usar IA, para no gastar una llamada extra). Devuelve el nombre canónico de la carrera
-    si encuentra una coincidencia, o None si no reconoce ninguna.
-    """
     if not texto_perfil:
         return None
 
-    texto_normalizado = texto_perfil.lower()
+    texto_normalizado = _normalizar_texto(texto_perfil)
     for nombre_carrera, datos in CARRERAS_UDESA.items():
         for palabra_clave in datos["palabras_clave"]:
-            if palabra_clave.lower() in texto_normalizado:
+            if _normalizar_texto(palabra_clave) in texto_normalizado:
                 return nombre_carrera
     return None
 
@@ -758,12 +864,19 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
             resultado.get('carrera_estudiante', 'No especificado'),
             resultado.get('puntaje_general', 0),
             resultado.get('color_semaforo', 'Error'),
-            _construir_texto_observacion(resultado)
+            _construir_texto_observacion(resultado),
+            _estado_categoria(resultado, 'titular'),
+            _estado_categoria(resultado, 'url'),
+            _estado_categoria(resultado, 'acerca_de'),
+            _estado_categoria(resultado, 'experiencia_laboral'),
+            _estado_categoria(resultado, 'educacion'),
+            _estado_categoria(resultado, 'certificaciones'),
+            _estado_categoria(resultado, 'aptitudes'),
         ]
         valores.append(fila)
 
     cuerpo = {'values': valores}
-    rango = f"'{NOMBRE_HOJA_HISTORICO}'!A2:H"
+    rango = f"'{NOMBRE_HOJA_HISTORICO}'!A2:O"
 
     try:
         resultado_append = servicio_sheets.spreadsheets().values().append(
@@ -790,6 +903,11 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
 # ==============================================================================
 # MÓDULO 4: GOOGLE DOCS (Generación de Informes a partir de Plantilla)
 # ==============================================================================
+
+def _estado_categoria(resultado, categoria):
+    """Estado ('Aprobado'/'A Mejorar'/'No detectado') de una categoría puntual, para las
+    columnas de detalle de 'Histórico' que alimentan las estadísticas."""
+    return resultado.get('evaluacion_detallada', {}).get(categoria, {}).get('estado', 'No evaluado')
 
 def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
     """
@@ -820,8 +938,11 @@ def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
         "ESTADO_TITULAR": estado('titular'),
         "COMENTARIO_TITULAR": comentario('titular'),
 
-        "ESTADO_UBICACION_URL": estado('ubicacion_y_url'),
-        "COMENTARIO_UBICACION_URL": comentario('ubicacion_y_url'),
+        "ESTADO_UBICACION": estado('ubicacion'),
+        "COMENTARIO_UBICACION": comentario('ubicacion'),
+
+        "ESTADO_URL": estado('url'),
+        "COMENTARIO_URL": comentario('url'),
 
         "ESTADO_ACERCA_DE": estado('acerca_de'),
         "COMENTARIO_ACERCA_DE": comentario('acerca_de'),
@@ -829,11 +950,18 @@ def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
         "ESTADO_EXPERIENCIA_LABORAL": estado('experiencia_laboral'),
         "COMENTARIO_EXPERIENCIA_LABORAL": comentario('experiencia_laboral'),
 
-        "ESTADO_EDUCACION_CERTIFICACIONES": estado('educacion_y_certificaciones'),
-        "COMENTARIO_EDUCACION_CERTIFICACIONES": comentario('educacion_y_certificaciones'),
+        "ESTADO_EDUCACION": estado('educacion'),
+        "COMENTARIO_EDUCACION": comentario('educacion'),
+
+        "ESTADO_CERTIFICACIONES": estado('certificaciones'),
+        "COMENTARIO_CERTIFICACIONES": comentario('certificaciones'),
 
         "ESTADO_APTITUDES": estado('aptitudes'),
         "COMENTARIO_APTITUDES": comentario('aptitudes'),
+
+        "BONUS_RECOMENDACIONES": datos_alumno.get('analisis_bonus', {}).get('recomendaciones', ''),
+        "BONUS_SECCIONES_ADICIONALES": datos_alumno.get('analisis_bonus', {}).get('secciones_adicionales', ''),
+    
     }
 
 
@@ -949,12 +1077,11 @@ if __name__ == "__main__":
         for archivo in lista_pdfs:
             print(f"Procesando: {archivo['name']}...")
 
-            # Paso A: Extraer texto
-            texto = extraer_texto_drive_en_memoria(servicio_drive, archivo['id'])
+            # Paso A: Extraer texto y URL
+            texto, url_perfil = extraer_texto_drive_en_memoria(servicio_drive, archivo['id'])
 
             # Paso B: Mandar a la IA
             if texto:
-                url_perfil = extraer_url_perfil(texto)
                 analisis_json = analizar_perfil_con_ia(texto, fecha_hoy)
                 if analisis_json:
                     analisis_json['url_perfil'] = url_perfil

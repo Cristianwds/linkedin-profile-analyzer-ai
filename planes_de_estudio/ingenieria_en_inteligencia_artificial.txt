@@ -1,31 +1,59 @@
---- Página 1 ---
-UNIVERSIDAD DE SAN ANDRÉS
-PLAN DE ESTUDIOS: INGENIERÍA EN INTELIGENCIA ARTIFICIAL
+INGENIERÍA EN INTELIGENCIA ARTIFICIAL
 
-El graduado de la carrera de Ingeniería en Inteligencia Artificial poseerá una sólida formación en ciencias básicas, ciencias de la computación y algoritmos avanzados de Machine Learning, preparándolo para liderar la innovación tecnológica.
-
---- Página 2 ---
 PRIMER AÑO
-- Análisis Matemático I
 - Álgebra Lineal
-- Introducción a la Programación (Python)
-- Física I
+- Análisis Matemático I
+- Pensamiento Computacional (*PF)
+- Electiva de Arte
+- Fundamentos de la Inteligencia Artificial
+- Matemática Discreta
+- Algoritmos y Estructuras de Datos
+- Electiva de Ciencias
+- Escritura y Oratoria
 
 SEGUNDO AÑO
-- Algoritmos y Estructuras de Datos (C++)
-- Probabilidad y Estadística
-- Bases de Datos
-- Arquitectura de Computadoras
+- Fundamentos de la Probabilidad y Estadística
+- Paradigmas de Programación
+- Física I
+- Economía I
+- Análisis Matemático II
+- Inferencia y Estimación
+- Análisis Matemático III
+- Métodos Numéricos y Optimización
 
---- Página 3 ---
 TERCER AÑO
-- Machine Learning I
-- Redes Neuronales y Deep Learning
-- Optimización Continua
-- Ingeniería de Software
+- Aprendizaje Automático y Aprendizaje Profundo (*PF)
+- Arquitectura de Computadoras y Sistemas Operativos
+- Electiva de Filosofía
+- Física II
+- Visión Artificial (*PF)
+- Redes y Comunicación
+- Base de Datos
+- Dinámica de Sistemas
 
 CUARTO AÑO
-- Procesamiento de Lenguaje Natural (NLP)
-- Visión Computacional
-- Ética y Sesgos en IA
-- Proyecto Final de Ingeniería
+- Procesamiento de Lenguaje Natural (*PF)
+- Principios de la Robótica Autónoma (*PF)
+- Ingeniería de Software (*PF)
+- Electiva de Historia
+- Aprendizaje Reforzado (*PF)
+- Criptografía y Ciberseguridad
+- Materia Optativa I
+- Materia Optativa II
+
+QUINTO AÑO
+- Materia Optativa III
+- Materia Optativa IV
+- Ética de la Inteligencia Artificial
+- Taller de Proyecto Final
+- Entrepreneurship
+- Materia Optativa V
+- Materia Optativa VI
+- Trabajo de Graduación - Proyecto Final
+- Práctica Profesional Supervisada
+
+NOTAS
+- (*1) Materias que se ofrecen solo en el primer semestre.
+- (*2) Materias que se ofrecen solo en el segundo semestre.
+- (*PF) / (*F) Cursos que forman parte del bloque de materias optativas del Ciclo de Fundamentos (la oferta puede ser modificada cada semestre por la dirección de la carrera).
+- Ciclos del plan de estudios: Ciclo de Fundamentos y Ciclos de Orientación (Inteligencia Artificial, Programación y Computación, Matemática y Ciencias Básicas, Proyecto Final y Práctica Profesional).
