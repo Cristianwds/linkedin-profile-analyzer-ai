@@ -853,9 +853,24 @@ def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, no
     except Exception as e:
         print(f"Error al escribir en Sheets: {e}")
 
+def _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, nombre_hoja, columna_referencia="A"):
+    """
+    Cuenta cuántas filas tienen contenido en la columna de referencia (por defecto A, 'Fecha')
+    y devuelve el número de la próxima fila libre. Se usa junto con values().update() en vez de
+    values().append(), para que escribir en 'Histórico' funcione bien aunque la hoja esté
+    armada como Tabla nativa de Sheets con muchas filas vacías de más (necesario para que ande
+    la Tabla Dinámica de Carrera).
+    """
+    rango = f"'{nombre_hoja}'!{columna_referencia}:{columna_referencia}"
+    resultado = servicio_sheets.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id, range=rango
+    ).execute()
+    valores = resultado.get('values', [])
+    return len(valores) + 1
 
 def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy):
-    """Agrega las filas del día a la hoja fija 'Histórico' (8 columnas, Fecha en A, URL en D)."""
+    """Escribe las filas del día en la hoja fija 'Histórico' (15 columnas, Fecha en A, URL en D),
+    calculando la próxima fila libre en vez de usar append() (ver _obtener_proxima_fila_libre)."""
     print(f"Escribiendo datos en '{NOMBRE_HOJA_HISTORICO}'...")
 
     valores = []
@@ -879,23 +894,22 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
         ]
         valores.append(fila)
 
-    cuerpo = {'values': valores}
-    rango = f"'{NOMBRE_HOJA_HISTORICO}'!A2:O"
-
     try:
-        resultado_append = servicio_sheets.spreadsheets().values().append(
+        fila_inicio = _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, NOMBRE_HOJA_HISTORICO)
+        fila_fin = fila_inicio + len(valores) - 1
+        rango = f"'{NOMBRE_HOJA_HISTORICO}'!A{fila_inicio}:O{fila_fin}"
+
+        servicio_sheets.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=rango,
             valueInputOption='USER_ENTERED',
-            body=cuerpo
+            body={'values': valores}
         ).execute()
 
-        filas_actualizadas = resultado_append.get('updates').get('updatedCells')
-        print(f"✅ ¡Éxito! Se actualizaron {filas_actualizadas} celdas en '{NOMBRE_HOJA_HISTORICO}'.")
+        print(f"✅ ¡Éxito! Se escribieron {len(valores)} filas en '{NOMBRE_HOJA_HISTORICO}' (desde la fila {fila_inicio}).")
 
-        fila_inicio = _parsear_fila_inicio(resultado_append['updates']['updatedRange'])
         sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, NOMBRE_HOJA_HISTORICO)
-        if fila_inicio and sheet_id is not None:
+        if sheet_id is not None:
             _aplicar_negrita_observaciones(
                 servicio_sheets, spreadsheet_id, sheet_id, fila_inicio,
                 lista_resultados, COLUMNA_OBSERVACION_HISTORICO
@@ -1046,8 +1060,39 @@ def generar_documento_informe(servicio_drive, id_plantilla, id_carpeta_destino, 
 # EJECUCIÓN DEL PIPELINE (Bucle Principal)
 # ==============================================================================
 
-if __name__ == "__main__":
-    print("Iniciando Pipeline de Desarrollo Profesional UdeSA...")
+def ejecutar_pipeline(callback_progreso=None):
+    """
+    Corre el pipeline completo: extrae los PDFs pendientes de la carpeta de Drive, los analiza
+    con la IA, escribe los resultados en Sheets y genera los informes individuales en Docs.
+
+    Se separó del bloque `if __name__ == "__main__":` para que, además del script de consola de
+    siempre (`python main.py`), también la pueda invocar el backend web (FastAPI) sin duplicar
+    lógica.
+
+    callback_progreso, si se pasa, es una función con la forma
+    callback_progreso(mensaje: str, procesados: int, total: int) — pensada para que el backend
+    web reporte avance en vivo (ej. "Analizando perfil 4 de 12...") sin tener que parsear la
+    salida de consola. Si no se pasa, no hace nada distinto: el script de consola sigue
+    funcionando exactamente igual que antes, basado en los print().
+
+    Devuelve un diccionario resumen (útil para el dashboard web):
+        {
+            "fecha": "dd/mm/aaaa",
+            "total_pdfs": int,
+            "analizados": int,
+            "fallidos": int,
+            "resultados": [ ... lista de JSONs de análisis ... ]
+        }
+
+    Lanza RuntimeError si falla la autenticación con Drive, para que el backend web pueda
+    distinguir ese caso de "no había perfiles para analizar".
+    """
+    def _avisar(mensaje, procesados=0, total=0):
+        print(mensaje)
+        if callback_progreso:
+            callback_progreso(mensaje, procesados, total)
+
+    _avisar("Iniciando Pipeline de Desarrollo Profesional UdeSA...")
 
     # Fecha calculada una única vez acá, y pasada como parámetro al resto del pipeline.
     hoy = date.today()
@@ -1063,71 +1108,86 @@ if __name__ == "__main__":
         print("   Los perfiles analizados no se moverán hasta configurar esa variable.")
 
     servicio_drive = autenticar_drive()
+    if not servicio_drive:
+        raise RuntimeError("No se pudo autenticar con Google Drive. Revisá las credenciales.")
 
-    if servicio_drive:
-        lista_pdfs = listar_pdfs_en_carpeta(servicio_drive, ID_CARPETA)
-        print(f"Se encontraron {len(lista_pdfs)} perfiles para analizar.\n")
+    lista_pdfs = listar_pdfs_en_carpeta(servicio_drive, ID_CARPETA)
+    total_pdfs = len(lista_pdfs)
+    _avisar(f"Se encontraron {total_pdfs} perfiles para analizar.\n", 0, total_pdfs)
 
-        # Subcarpeta de 'Analizados' del día (se crea una sola vez si no existe).
-        carpeta_analizados_hoy = None
-        # Lo comento solo para seguir con las pruebas. Luego descomentar para que se muevan los perfiles
-        #if ID_CARPETA_ANALIZADOS:
-        #    carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
-        #        servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
-        #    )
+    # Subcarpeta de 'Analizados' del día (se crea una sola vez si no existe).
+    carpeta_analizados_hoy = None
+    # Lo comento solo para seguir con las pruebas. Luego descomentar para que se muevan los perfiles
+    #if ID_CARPETA_ANALIZADOS:
+    #    carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
+    #        servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
+    #    )
 
-        resultados_finales = []  # Aquí guardaremos todos los JSONs
+    resultados_finales = []  # Aquí guardaremos todos los JSONs
 
-        for archivo in lista_pdfs:
-            print(f"Procesando: {archivo['name']}...")
+    for indice, archivo in enumerate(lista_pdfs, start=1):
+        _avisar(f"Procesando: {archivo['name']}...", indice - 1, total_pdfs)
 
-            # Paso A: Extraer texto y URL
-            texto, url_perfil = extraer_texto_drive_en_memoria(servicio_drive, archivo['id'])
+        # Paso A: Extraer texto y URL
+        texto, url_perfil = extraer_texto_drive_en_memoria(servicio_drive, archivo['id'])
 
-            # Paso B: Mandar a la IA
-            if texto:
-                analisis_json = analizar_perfil_con_ia(texto, fecha_hoy)
-                if analisis_json:
-                    analisis_json['url_perfil'] = url_perfil
-                    resultados_finales.append(analisis_json)
-                    print(f"✅ Análisis completado para: {analisis_json.get('nombre_estudiante', 'Desconocido')}")
-
-                    # Paso C: Mover el PDF ya analizado, para no volver a listarlo mañana.
-                    # Si falla el análisis (los 3 proveedores caen), el PDF se queda en la
-                    # carpeta original a propósito, para reintentarlo en la próxima corrida.
-                    if carpeta_analizados_hoy:
-                        movido = mover_archivo_a_carpeta(
-                            servicio_drive, archivo['id'], carpeta_analizados_hoy, ID_CARPETA
-                        )
-                        if movido:
-                            print(f"   📦 Movido a 'Analizados/{fecha_iso}'.")
-                else:
-                    print("   ⚠️ No se pudo analizar (fallaron los 3 proveedores). Queda en la carpeta original para reintentar.")
-
-            print("-" * 40)
-
-        # PASO 3: Escribir en la hoja diaria y en el Histórico
-        servicio_sheets = autenticar_sheets()
-        if servicio_sheets and resultados_finales:
-            nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
-            escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy)
-            escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy)
-
-        # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
-        if ID_PLANTILLA_INFORME and resultados_finales:
-            print("\nIniciando fase de creación de reportes individuales...")
-            carpeta_informes_hoy = obtener_o_crear_subcarpeta(
-                servicio_drive, ID_CARPETA_INFORMES, fecha_iso
-            )
-            for resultado in resultados_finales:
-                generar_documento_informe(
-                    servicio_drive,
-                    ID_PLANTILLA_INFORME,
-                    carpeta_informes_hoy,
-                    resultado,
-                    fecha_hoy
+        # Paso B: Mandar a la IA
+        if texto:
+            analisis_json = analizar_perfil_con_ia(texto, fecha_hoy)
+            if analisis_json:
+                analisis_json['url_perfil'] = url_perfil
+                resultados_finales.append(analisis_json)
+                _avisar(
+                    f"✅ Análisis completado para: {analisis_json.get('nombre_estudiante', 'Desconocido')}",
+                    indice, total_pdfs
                 )
 
-        print("\n🎉 PIPELINE FINALIZADO.")
-        # Imprimimos la lista completa de resultados estructurados
-        # print(json.dumps(resultados_finales, indent=2, ensure_ascii=False))
+                # Paso C: Mover el PDF ya analizado, para no volver a listarlo mañana.
+                # Si falla el análisis (los 3 proveedores caen), el PDF se queda en la
+                # carpeta original a propósito, para reintentarlo en la próxima corrida.
+                if carpeta_analizados_hoy:
+                    movido = mover_archivo_a_carpeta(
+                        servicio_drive, archivo['id'], carpeta_analizados_hoy, ID_CARPETA
+                    )
+                    if movido:
+                        print(f"   📦 Movido a 'Analizados/{fecha_iso}'.")
+            else:
+                print("   ⚠️ No se pudo analizar (fallaron los 3 proveedores). Queda en la carpeta original para reintentar.")
+
+        print("-" * 40)
+
+    # PASO 3: Escribir en la hoja diaria y en el Histórico
+    servicio_sheets = autenticar_sheets()
+    if servicio_sheets and resultados_finales:
+        nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
+        escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy)
+        escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy)
+
+    # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
+    if ID_PLANTILLA_INFORME and resultados_finales:
+        _avisar("\nIniciando fase de creación de reportes individuales...", len(resultados_finales), total_pdfs)
+        carpeta_informes_hoy = obtener_o_crear_subcarpeta(
+            servicio_drive, ID_CARPETA_INFORMES, fecha_iso
+        )
+        for resultado in resultados_finales:
+            generar_documento_informe(
+                servicio_drive,
+                ID_PLANTILLA_INFORME,
+                carpeta_informes_hoy,
+                resultado,
+                fecha_hoy
+            )
+
+    _avisar("🎉 PIPELINE FINALIZADO.", total_pdfs, total_pdfs)
+
+    return {
+        "fecha": fecha_hoy,
+        "total_pdfs": total_pdfs,
+        "analizados": len(resultados_finales),
+        "fallidos": total_pdfs - len(resultados_finales),
+        "resultados": resultados_finales,
+    }
+
+
+if __name__ == "__main__":
+    ejecutar_pipeline()
