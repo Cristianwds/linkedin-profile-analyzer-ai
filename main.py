@@ -32,7 +32,8 @@ load_dotenv()
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/spreadsheets',  # Permiso para editar el spread sheet
-    'https://www.googleapis.com/auth/documents'       # Permiso para inyectar texto en Docs
+    'https://www.googleapis.com/auth/documents',       # Permiso para inyectar texto en Docs
+    'https://www.googleapis.com/auth/presentations'   # Permiso para inyectar en las presentaciones
 ]
 
 # Obtenemos los IDs y credenciales de forma segura
@@ -44,6 +45,7 @@ ID_PLANTILLA_INFORME = os.getenv('ID_PLANTILLA_INFORME')  # <-- NUEVO: ID del Go
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
+ID_PRESENTACION_STATS = os.getenv('ID_PRESENTACION_STATS')
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -494,6 +496,20 @@ def _normalizar_texto(texto):
     return ''.join(c for c in texto_sin_tildes if not unicodedata.combining(c))
 
 
+def _nombre_carpeta_carrera(carrera_detectada):
+    """Nombre de subcarpeta para agrupar informes por carrera. Usa el nombre canónico de
+    CARRERAS_UDESA si coincide con alguna carrera conocida (evita carpetas duplicadas por
+    variantes de redacción de la IA, p. ej. 'Ingeniería en IA' vs 'Ingeniería en Inteligencia
+    Artificial'); si no coincide con ninguna, usa el texto crudo que devolvió la IA."""
+    if not carrera_detectada:
+        return "Sin carrera detectada"
+    texto_normalizado = _normalizar_texto(carrera_detectada)
+    for nombre_canonico in CARRERAS_UDESA:
+        if _normalizar_texto(nombre_canonico) == texto_normalizado:
+            return nombre_canonico
+    return carrera_detectada
+
+
 def detectar_carrera_por_keywords(texto_perfil):
     if not texto_perfil:
         return None
@@ -607,10 +623,24 @@ def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3
     return None
 
 
-def analizar_perfil_con_ia(texto_perfil, fecha_hoy):
-    """Orquestador: preclasificación de carrera → caché → Gemini → Groq → NVIDIA."""
+def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None):
+    """Orquestador: preclasificación de carrera → caché → Gemini → Groq → NVIDIA.
+
+    carrera_cohorte: si se pasa (modo "cohorte completa"), pisa la detección automática por
+    keywords para TODO el lote, avisando por consola si un perfil puntual no la menciona (no
+    se descarta el perfil, solo se informa la inconsistencia)."""
 
     carrera_detectada = detectar_carrera_por_keywords(texto_perfil)
+
+    if carrera_cohorte:
+        if carrera_detectada and carrera_detectada != carrera_cohorte:
+            print(f"   [⚠️ Este perfil menciona '{carrera_detectada}', pero se analiza como "
+                  f"'{carrera_cohorte}' (modo cohorte).]")
+        elif not carrera_detectada:
+            print(f"   [⚠️ Este perfil no menciona ninguna carrera reconocida; se analiza "
+                  f"igual como '{carrera_cohorte}' (modo cohorte).]")
+        carrera_detectada = carrera_cohorte
+
     plan_de_estudios = cargar_plan_de_estudios(carrera_detectada) if carrera_detectada else None
 
     hash_perfil = calcular_hash_perfil(texto_perfil, plan_de_estudios)
@@ -659,10 +689,29 @@ def autenticar_sheets():
         print(f"Error de autenticación en Sheets: {e}")
         return None
 
+def autenticar_slides():
+    """Conecta con Google Slides usando tus credenciales de usuario."""
+    try:
+        creds = autenticar_google()
+        return build('slides', 'v1', credentials=creds)
+    except Exception as e:
+        print(f"Error de autenticación en Slides: {e}")
+        return None
 
 NOMBRE_HOJA_PLANTILLA = "Plantilla"
 NOMBRE_HOJA_HISTORICO = "Histórico"
+NOMBRE_HOJA_ESTADISTICAS_DIA = "Estadísticas del Día" 
 
+OBJECT_IDS_GRAFICOS_STATS = [
+    "g3f7333178fa_0_1",
+    "g3f7333178fa_0_2",
+    "g3f7333178fa_0_3",
+    "g3f7333178fa_0_4",
+    "g3f7333178fa_0_5",
+    "g3f7333178fa_0_6",
+    "g3f7333178fa_0_7",
+    "g3f7333178fa_0_8",
+]
 
 def _obtener_metadata_hojas(servicio_sheets, spreadsheet_id):
     """Devuelve la lista de propiedades (sheetId, title, index) de cada hoja del spreadsheet."""
@@ -918,6 +967,41 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
         print(f"Error al escribir en '{NOMBRE_HOJA_HISTORICO}': {e}")
 
 
+def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha_hoy):
+    """
+    Escribe la fecha de hoy en B1 de 'Estadísticas del Día'. Esa hoja tiene fórmulas COUNTIFS
+    que filtran 'Histórico' por esa fecha (columna A), así que no hace falta calcular ningún
+    porcentaje acá: al cambiar B1, los conteos —y los gráficos vinculados en el Slides que
+    apuntan a ellos— se recalculan solos.
+    """
+    try:
+        servicio_sheets.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"'{NOMBRE_HOJA_ESTADISTICAS_DIA}'!B1",
+            valueInputOption='USER_ENTERED',
+            body={'values': [[fecha_hoy]]}
+        ).execute()
+        print(f"✅ Fecha de '{NOMBRE_HOJA_ESTADISTICAS_DIA}' actualizada a {fecha_hoy}.")
+    except Exception as e:
+        print(f"   [⚠️ No se pudo actualizar '{NOMBRE_HOJA_ESTADISTICAS_DIA}': {e}]")
+
+def refrescar_graficos_slides(servicio_slides, id_presentacion, object_ids):
+    """
+    Fuerza el refresh de los gráficos vinculados (sheetsChart) insertados en el Slides de
+    estadísticas, para que reflejen los valores recién escritos en 'Estadísticas del Día'.
+    """
+    if not id_presentacion or not object_ids:
+        return
+    peticiones = [{'refreshSheetsChart': {'objectId': oid}} for oid in object_ids]
+    try:
+        servicio_slides.presentations().batchUpdate(
+            presentationId=id_presentacion,
+            body={'requests': peticiones}
+        ).execute()
+        print(f"✅ Se refrescaron {len(object_ids)} gráficos en el Slides de estadísticas.")
+    except Exception as e:
+        print(f"   [⚠️ No se pudieron refrescar los gráficos del Slides: {e}]")
+
 # ==============================================================================
 # MÓDULO 4: GOOGLE DOCS (Generación de Informes a partir de Plantilla)
 # ==============================================================================
@@ -1060,7 +1144,29 @@ def generar_documento_informe(servicio_drive, id_plantilla, id_carpeta_destino, 
 # EJECUCIÓN DEL PIPELINE (Bucle Principal)
 # ==============================================================================
 
-def ejecutar_pipeline(callback_progreso=None):
+def _preguntar_modo_analisis():
+    """
+     Devuelve el nombre de la carrera en modo cohorte, o None en modo mixto.
+    """
+    print("\n¿Qué perfiles vas a analizar?")
+    print("  1. Una cohorte completa de una misma carrera")
+    print("  2. Un conjunto de perfiles de distintas carreras")
+    opcion = input("Elegí 1 o 2: ").strip()
+
+    if opcion == "1":
+        print("\nCarreras disponibles:")
+        for nombre in CARRERAS_UDESA:
+            print(f"  - {nombre}")
+        carrera_elegida = input("Escribí el nombre exacto de la carrera: ").strip()
+        if carrera_elegida not in CARRERAS_UDESA:
+            print("⚠️ No coincide con ninguna carrera conocida, se analiza en modo mixto igual.")
+            return None
+        return carrera_elegida
+
+    return None
+
+
+def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
     """
     Corre el pipeline completo: extrae los PDFs pendientes de la carpeta de Drive, los analiza
     con la IA, escribe los resultados en Sheets y genera los informes individuales en Docs.
@@ -1074,6 +1180,12 @@ def ejecutar_pipeline(callback_progreso=None):
     web reporte avance en vivo (ej. "Analizando perfil 4 de 12...") sin tener que parsear la
     salida de consola. Si no se pasa, no hace nada distinto: el script de consola sigue
     funcionando exactamente igual que antes, basado en los print().
+
+    carrera_cohorte: nombre canónico de una carrera de CARRERAS_UDESA, o None. Si se pasa, todo
+    el lote se analiza como si fuera de esa carrera (modo "cohorte completa"), avisando por
+    perfil si el texto no la menciona. Si es None, cada perfil usa su propia detección
+    automática (modo "conjunto mixto"). El script de consola lo pide con _preguntar_modo_analisis()
+    antes de llamar a esta función; el backend web lo pasaría directo.
 
     Devuelve un diccionario resumen (útil para el dashboard web):
         {
@@ -1133,9 +1245,13 @@ def ejecutar_pipeline(callback_progreso=None):
 
         # Paso B: Mandar a la IA
         if texto:
-            analisis_json = analizar_perfil_con_ia(texto, fecha_hoy)
+            analisis_json = analizar_perfil_con_ia(texto, fecha_hoy, carrera_cohorte)
             if analisis_json:
                 analisis_json['url_perfil'] = url_perfil
+                if carrera_cohorte:
+                    # Aseguramos que el campo que arma la IA coincida textualmente con la
+                    # carrera elegida (se usa para las carpetas por carrera y para Histórico).
+                    analisis_json['carrera_estudiante'] = carrera_cohorte
                 resultados_finales.append(analisis_json)
                 _avisar(
                     f"✅ Análisis completado para: {analisis_json.get('nombre_estudiante', 'Desconocido')}",
@@ -1162,6 +1278,10 @@ def ejecutar_pipeline(callback_progreso=None):
         nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
         escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy)
         escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy)
+        actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy)
+        servicio_slides = autenticar_slides()
+        if servicio_slides and ID_PRESENTACION_STATS:
+            refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS, OBJECT_IDS_GRAFICOS_STATS)
 
     # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
     if ID_PLANTILLA_INFORME and resultados_finales:
@@ -1169,11 +1289,17 @@ def ejecutar_pipeline(callback_progreso=None):
         carpeta_informes_hoy = obtener_o_crear_subcarpeta(
             servicio_drive, ID_CARPETA_INFORMES, fecha_iso
         )
+        carpetas_carrera_hoy = {}  # cache: nombre de carpeta -> id, para no repetir la búsqueda
         for resultado in resultados_finales:
+            nombre_carpeta = _nombre_carpeta_carrera(resultado.get('carrera_estudiante'))
+            if nombre_carpeta not in carpetas_carrera_hoy:
+                carpetas_carrera_hoy[nombre_carpeta] = obtener_o_crear_subcarpeta(
+                    servicio_drive, carpeta_informes_hoy, nombre_carpeta
+                )
             generar_documento_informe(
                 servicio_drive,
                 ID_PLANTILLA_INFORME,
-                carpeta_informes_hoy,
+                carpetas_carrera_hoy[nombre_carpeta],
                 resultado,
                 fecha_hoy
             )
@@ -1190,4 +1316,5 @@ def ejecutar_pipeline(callback_progreso=None):
 
 
 if __name__ == "__main__":
-    ejecutar_pipeline()
+    carrera_cohorte = _preguntar_modo_analisis()
+    ejecutar_pipeline(carrera_cohorte=carrera_cohorte)
