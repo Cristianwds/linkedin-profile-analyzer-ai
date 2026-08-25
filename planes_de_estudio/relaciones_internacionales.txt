@@ -1,0 +1,41 @@
+PRIMER AÑO
+- Política (*F)
+- Escritura y Oratoria
+- Economía I
+- Filosofía Política Clásica (*1)
+- Ciencias
+- Fundamentos Matemáticos I
+- Fundamentos del Sistema Internacional (*2)
+- Filosofía Política Moderna (*2)
+
+SEGUNDO AÑO
+- Electiva de Historia
+- Introducción al Pensamiento Computacional
+- Estadística para las Ciencias Sociales
+- Historia de las Relaciones Internacionales (*1)
+- Historia Económica I o Historia Argentina Contemporánea (*F)
+- Fundamentos Matemáticos II (*2)
+- Derechos Fundamentales
+- Política Exterior Argentina (*2)
+
+TERCER AÑO
+- Materia Optativa I
+- Diseños de Investigación (*1)
+- Teoría de las Relaciones Internacionales (*1)
+- Juegos y Comportamiento Estratégico
+- Metodos de Investigación (*2)
+- Derecho Internacional Público (*2)
+- Macroeconomía I
+- Electiva de Literatura
+
+CUARTO AÑO
+- Manejo y visualización de datos (*1)
+- Sistemas Políticos Comparados (*1)
+- Análisis de la Política Exterior y la Toma de Decisiones (*1)
+- Seguridad Internacional (*1)
+- Taller trabajo de graduación (*3)
+- Sociología Política (*2)
+- Política e Instituciones del Comercio Internacional (*2)
+- Materia Optativa II
+- Materia Optativa III
+- Taller trabajo de graduación (*3)

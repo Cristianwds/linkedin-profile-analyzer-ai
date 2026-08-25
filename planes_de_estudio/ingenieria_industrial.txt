@@ -1,0 +1,54 @@
+PRIMER AÑO
+- Álgebra Lineal
+- Análisis Matemático I
+- Pensamiento Computacional
+- Electiva Filosofia
+- Análisis Matemático II
+- Algoritmos y Análisis de Datos
+- Química General
+- Introducción a las Ciencias: Metodología de la Investigación y Ciencia
+
+SEGUNDO AÑO
+- Fundamentos de la Probabilidad y Estadística
+- Principios de la Ingeniería Industrial
+- Física I
+- Economía I
+- Análisis Matemático III
+- Métodos Numéricos y Optimización
+- Física II
+- Diseño de Producto y Prototipado
+
+TERCER AÑO
+- Termodinámica Aplicada
+- Física III
+- Inferencia y Estimación
+- Derechos Fundamentales
+- Mecánica de Fluidos
+- Inteligencia Artificial
+- Materiales y Nanotecnología
+- Ingeniería de Sistemas Complejos
+- Electiva de Historia: Historia Sociopolítica
+
+CUARTO AÑO
+- Electrotecnia
+- Inteligencia Operativa y Simulación
+- Organización y Diseño de la Producción
+- Mecánica y Mecanismos
+- Procesos Industriales
+- Automatización y Robótica Industrial
+- Modelado de la Demanda y Abastecimiento
+- Finanzas y Proyectos de Inversión
+- Innovacion Tecnológica
+- Escritura y Oratoria
+
+QUINTO AÑO
+- Biotecnología Industrial
+- Taller de Proyecto Final
+- Administración y emprendedurismo
+- Optativa I: Teoría de Juegos y Comportamiento Estratégico
+- Optativa II: Diseño de Producto Digital o Marketing
+- Economía Empresarial y Control de Gestión
+- Calidad, Seguridad Ambiental e Higiene
+- Trabajo de Graduación - Proyecto Final - Práctica Profesional Supervisada
+- Optativa III: Ingeniería de Software o Automatización Avanzada
+- Optativa IV: Inteligencia Artificial Avanzada

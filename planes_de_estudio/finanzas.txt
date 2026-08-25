@@ -1,0 +1,52 @@
+PRIMER AÑO
+- Fundamentos Administración
+- Economía I
+- Pensamiento Computacional
+- Introducción al razonamiento matemático
+- Análisis y Planificación Financiera
+- Derechos Fundamentales
+- Cálculo I
+- Algebra
+
+SEGUNDO AÑO
+- Renta Fija
+- Electiva de Filosofía
+- Calculo II
+- Estadística I
+- Mercado de Capitales
+- Programación Aplicada a Finanzas
+- Estadistica II
+- Electiva de Ciencias
+- MATERIAS OPTATIVAS Productos Estructurados
+
+TERCER AÑO
+- Derivados
+- Electiva de Historia
+- Teoría del Portafolio
+- Microeconomía
+- Finanzas Corporativas
+- Estrategias de Trading
+- Matemática Aplicada a Finanzas
+- Econometría
+
+CUARTO AÑO
+- Estratégia Legal e Impositiva
+- Banca & Fintech
+- Finanzas Corporativas Avanzadas
+- Macroeconomía
+- Valuación Acciones
+- Política Macroeconómica
+- Finanzas Computacionales
+- Pronósiticos Financieros
+
+QUINTO AÑO
+- Gestión de Riesgos del Negocio
+- Optativa I
+- Ingeniería Financiera
+- Optativa II
+- Escritura y Oratoria
+- Teoria Financiera de la Valuación
+- Optativa III
+- Optativa IV
+- Administración Riesgos Financieros
+- Trabajo Final Graduación

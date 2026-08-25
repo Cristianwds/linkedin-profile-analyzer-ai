@@ -1,0 +1,39 @@
+PRIMER AÑO
+- Introducción al Pensamiento Computacional
+- Introducción al Razonamiento Matemático
+- Economía I
+- Fundamientos de Administración
+- Escritura
+- Cálculo I
+- Álgebra
+- Historia Económica I
+
+SEGUNDO AÑO
+- Ciencias
+- Cálculo 2
+- Estadística I
+- Finanzas Empresariales
+- Historia
+- Estadística II
+- Marketing
+- Microeconomía I
+
+TERCER AÑO
+- Filosofía
+- Macroeconomía I
+- Microeconomía II
+- Valuación de Empresas y Negocios
+- Entrepreneurship
+- Econometría
+- Gestión de las Operaciones
+- Macrofinanzas
+
+CUARTO AÑO
+- Materia Optativa I
+- Análisis de Datos
+- Estrategia de Negocios
+- Materia Optativa II
+- Derechos Fundamentales
+- Taller de Tesis
+- Organización Industrial
+- Derivados y Gestión de Riesgos
