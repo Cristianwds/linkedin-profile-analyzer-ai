@@ -1,2 +1,58 @@
+INGENIERÍA EN SUSTENTABILIDAD
+
+PRIMER AÑO
+- Análisis Matemático I
+- Pensamiento Computacional
+- Algebra Lineal
+- Electiva de Ciencias
+- Análisis Matemático II
+- Química General
+- Bienes Naturales: Biodiversidad y Recursos Naturales
+- Derechos Fundamentales
+
+SEGUNDO AÑO
+- Física I
+- Fundamentos de la Probabilidad y Estadística
+- Química Aplicada
+- Economía I
+- Análisis Matemático III
+- Física II
+- Métodos Numéricos y Optimización
+- Cambio Climático y Desarrollo Sostenible: Desafíos y Estrategias de Acción
+
+TERCER AÑO
+- Termodinámica Aplicada
+- Electrotecnica
+- Física III
+- Electiva de Filosofía
+- Procesos Extractivos y Sostenibilidad
+- Mecánica de Fluidos y Transferencia de Calor
+- Teoría de los Juegos y Comportamiento Estratégico
+- Electiva de Historia
+
+CUARTO AÑO
+- Producción y Ciclo de Vida de los Materiales
+- Energía y Distribución Eléctrica
+- Nuevas Economías y Mercados de Carbono
+- Optativa I
+- Optativa II
+- Control y Electrónica de Potencia
+- Inteligencia Artificial Aplicada
+- Escritura y Oratoria
+
 QUINTO AÑO
-- Ciudades del Futuro:
+- Ciudades del Futuro: Innovación y Sostenibilidad
+- Sistemas de Transporte Sustentable
+- Innovación en agroindustria
+- Optativa III
+- Taller de Proyecto Final
+- Entrepreneurship
+- Optativa IV
+- Optativa V
+- Optativa VI
+- Práctica Profesional Supervisada
+- Trabajo de Graduación - Proyecto Final
+
+NOTAS
+- La carrera se estructura en un Ciclo de Fundamentos y tres Ciclos de Orientación (Ciencias Aplicadas; Matemática y Ciencias Básicas; Sustentabilidad), además del Ciclo de Proyecto Final y Práctica Profesional.
+- El plan contempla materias electivas y optativas a lo largo de los años de cursada.

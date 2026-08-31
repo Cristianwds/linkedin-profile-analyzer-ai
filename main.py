@@ -273,7 +273,8 @@ def listar_pdfs_en_carpeta(servicio, folder_id):
         pagina_token = None
         while True:
             resultados = servicio.files().list(
-                q=query, spaces='drive', fields='nextPageToken, files(id, name)', pageToken=pagina_token
+                q=query, spaces='drive', fields='nextPageToken, files(id, name)', pageToken=pagina_token,
+                supportsAllDrives=True, includeItemsFromAllDrives=True
             ).execute()
             archivos.extend(resultados.get('files', []))
             pagina_token = resultados.get('nextPageToken')
@@ -294,7 +295,7 @@ def extraer_texto_drive_en_memoria(servicio, file_id):
     LinkedIn embebido, se cae a un regex sobre el texto extraído como respaldo.
     """
     try:
-        request = servicio.files().get_media(fileId=file_id)
+        request = servicio.files().get_media(fileId=file_id, supportsAllDrives=True)
         archivo_memoria = io.BytesIO()
         downloader = MediaIoBaseDownload(archivo_memoria, request)
         done = False
@@ -364,7 +365,8 @@ def obtener_o_crear_subcarpeta(servicio_drive, id_carpeta_padre, nombre_subcarpe
         "and mimeType='application/vnd.google-apps.folder' and trashed=false"
     )
     resultados = servicio_drive.files().list(
-        q=query, spaces='drive', fields='files(id, name)'
+        q=query, spaces='drive', fields='files(id, name)',
+        supportsAllDrives=True, includeItemsFromAllDrives=True
     ).execute()
     encontradas = resultados.get('files', [])
 
@@ -376,7 +378,7 @@ def obtener_o_crear_subcarpeta(servicio_drive, id_carpeta_padre, nombre_subcarpe
         'mimeType': 'application/vnd.google-apps.folder',
         'parents': [id_carpeta_padre]
     }
-    carpeta = servicio_drive.files().create(body=metadata, fields='id').execute()
+    carpeta = servicio_drive.files().create(body=metadata, fields='id', supportsAllDrives=True).execute()
     print(f"📁 Subcarpeta creada: '{nombre_subcarpeta}'")
     return carpeta.get('id')
 
@@ -388,7 +390,8 @@ def mover_archivo_a_carpeta(servicio_drive, file_id, id_carpeta_destino, id_carp
             fileId=file_id,
             addParents=id_carpeta_destino,
             removeParents=id_carpeta_origen,
-            fields='id, parents'
+            fields='id, parents',
+            supportsAllDrives=True
         ).execute()
         return True
     except Exception as e:
@@ -483,7 +486,59 @@ CARRERAS_UDESA = {
         "palabras_clave": ["ingeniería en biotecnología", "ingenieria en biotecnologia"],
         "archivo_plan": "ingenieria_en_biotecnologia.txt",
     },
-    # TODO: agregar acá el resto de las carreras de UdeSA se desee cubrir
+    "Abogacía": {
+        "palabras_clave": ["abogacía", "abogacia", "estudiante de abogacía"],
+        "archivo_plan": "abogacia.txt",
+    },
+    "Licenciatura en Administración de Empresas": {
+        "palabras_clave": ["licenciatura en administración de empresas", "licenciatura en administracion de empresas"],
+        "archivo_plan": "administracion.txt",
+    },
+    "Licenciatura en Ciencias de la Educación": {
+        "palabras_clave": ["ciencias de la educación", "ciencias de la educacion"],
+        "archivo_plan": "ciencias_educacion.txt",
+    },
+    "Licenciatura en Ciencia Política y Gobierno": {
+        "palabras_clave": ["ciencia política", "ciencias políticas", "ciencia politica"],
+        "archivo_plan": "ciencias_politicas.txt",
+    },
+    "Licenciatura en Comunicación": {
+        "palabras_clave": ["licenciatura en comunicación", "licenciatura en comunicacion"],
+        "archivo_plan": "comunicacion.txt",
+    },
+    "Licenciatura en Diseño": {
+        "palabras_clave": ["licenciatura en diseño", "licenciatura en diseno"],
+        "archivo_plan": "diseno.txt",
+    },
+    "Licenciatura en Economía Empresarial": {
+        "palabras_clave": ["economía empresarial", "economia empresarial"],
+        "archivo_plan": "economia_empresarial.txt",
+    },
+    "Licenciatura en Finanzas": {
+        "palabras_clave": ["licenciatura en finanzas"],
+        "archivo_plan": "finanzas.txt",
+    },
+    "Licenciatura en Humanidades": {
+        "palabras_clave": ["licenciatura en humanidades"],
+        "archivo_plan": "humanidades.txt",
+    },
+    "Ingeniería Industrial": {
+        "palabras_clave": ["ingeniería industrial", "ingenieria industrial"],
+        "archivo_plan": "ingenieria_industrial.txt",
+    },
+    "Ingeniería en Sustentabilidad": {
+        "palabras_clave": ["ingeniería en sustentabilidad", "ingenieria en sustentabilidad"],
+        "archivo_plan": "ingenieria_sustentabilidad.txt",
+    },
+    "Profesorado en Educación Primaria": {
+        "palabras_clave": ["profesorado en educación primaria", "profesorado de educación primaria"],
+        "archivo_plan": "profesorado_educacion_primaria.txt",
+    },
+    "Licenciatura en Relaciones Internacionales": {
+        "palabras_clave": ["relaciones internacionales"],
+        "archivo_plan": "relaciones_internacionales.txt",
+    },
+    # TODO: agregar acá el resto de las carreras de UdeSA que se desee cubrir
 }
 
 
@@ -564,7 +619,7 @@ def _llamar_groq(prompt):
     if not cliente_groq:
         raise RuntimeError("GROQ_API_KEY no configurada.")
     respuesta = cliente_groq.chat.completions.create(
-        model="llama-3.3-70b-versatile", # model="llama-3.1-8b-instant" por si hay que analizar muchos
+        model="qwen/qwen3.8-27b",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         max_completion_tokens=2048,
@@ -580,11 +635,11 @@ def _llamar_nvidia(prompt):
     if not cliente_nvidia:
         raise RuntimeError("NVIDIA_API_KEY no configurada.")
     respuesta = cliente_nvidia.chat.completions.create(
-        model="meta/llama-3.3-70b-instruct",
+        model="deepseek-ai/deepseek-v4-flash-0731",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         top_p=0.7,
-        max_tokens=2048,
+        max_tokens=4096,
         stream=False
     )
     texto = respuesta.choices[0].message.content
@@ -703,14 +758,14 @@ NOMBRE_HOJA_HISTORICO = "Histórico"
 NOMBRE_HOJA_ESTADISTICAS_DIA = "Estadísticas del Día" 
 
 OBJECT_IDS_GRAFICOS_STATS = [
-    "g3f7333178fa_0_1",
-    "g3f7333178fa_0_2",
-    "g3f7333178fa_0_3",
-    "g3f7333178fa_0_4",
-    "g3f7333178fa_0_5",
-    "g3f7333178fa_0_6",
-    "g3f7333178fa_0_7",
-    "g3f7333178fa_0_8",
+    "g3f4088a6156_1_0",
+    "g3f4088a6156_1_1",
+    "g3f4088a6156_1_2",
+    "g3f4088a6156_1_3",
+    "g3f4088a6156_1_4",
+    "g3f4088a6156_1_5",
+    "g3f4088a6156_1_6",
+    "g3f4088a6156_1_7",
 ]
 
 def _obtener_metadata_hojas(servicio_sheets, spreadsheet_id):
@@ -1087,7 +1142,8 @@ def generar_documento_informe(servicio_drive, id_plantilla, id_carpeta_destino, 
         copia = servicio_drive.files().copy(
             fileId=id_plantilla,
             body=metadata_copia,
-            fields='id'
+            fields='id',
+            supportsAllDrives=True
         ).execute()
         doc_id = copia.get('id')
 
@@ -1154,17 +1210,21 @@ def _preguntar_modo_analisis():
     opcion = input("Elegí 1 o 2: ").strip()
 
     if opcion == "1":
+        carreras_disponibles = list(CARRERAS_UDESA.keys())
+
         print("\nCarreras disponibles:")
-        for nombre in CARRERAS_UDESA:
-            print(f"  - {nombre}")
-        carrera_elegida = input("Escribí el nombre exacto de la carrera: ").strip()
-        if carrera_elegida not in CARRERAS_UDESA:
-            print("⚠️ No coincide con ninguna carrera conocida, se analiza en modo mixto igual.")
+        for indice, nombre in enumerate(carreras_disponibles, start=1):
+            print(f"  {indice}. {nombre}")
+
+        seleccion = input("Elegí el número de la carrera: ").strip()
+
+        if not seleccion.isdigit() or not (1 <= int(seleccion) <= len(carreras_disponibles)):
+            print("⚠️ Opción inválida, se analiza en modo mixto igual.")
             return None
-        return carrera_elegida
+
+        return carreras_disponibles[int(seleccion) - 1]
 
     return None
-
 
 def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
     """
