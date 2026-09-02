@@ -3,7 +3,7 @@ listar_graficos_slides.py
 
 Script de UNA SOLA CORRIDA para obtener el objectId de cada gráfico vinculado (sheetsChart)
 insertado en la presentación de estadísticas. Ejecutalo desde la misma carpeta que main.py
-(usa su misma autenticación: autenticar_google()).
+(usa su misma autenticación de consola: autenticar_google_cli()).
 
 Requisitos antes de correrlo:
   1. Haber agregado 'https://www.googleapis.com/auth/presentations' a SCOPES en main.py.
@@ -24,8 +24,7 @@ OBJECT_IDS_GRAFICOS_STATS en main.py.
 
 import os
 from dotenv import load_dotenv
-from googleapiclient.discovery import build
-from main import autenticar_google  # reusa la misma autenticación que ya tenés en main.py
+from main import autenticar_google_cli, construir_servicio_slides  # reusa la misma autenticación de consola que main.py
 
 load_dotenv()  # por las dudas: main.py ya lo hace al importarse, esto es solo defensivo
 
@@ -37,8 +36,8 @@ def listar_graficos_vinculados(id_presentacion):
         print("❌ No se encontró ID_PRESENTACION_STATS en tu .env. Agregalo y volvé a correr.")
         return []
 
-    creds = autenticar_google()
-    servicio_slides = build('slides', 'v1', credentials=creds)
+    creds = autenticar_google_cli()
+    servicio_slides = construir_servicio_slides(creds)
 
     presentacion = servicio_slides.presentations().get(
         presentationId=id_presentacion

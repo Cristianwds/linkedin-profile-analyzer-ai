@@ -25,3 +25,6 @@ pdfs/
 
 planes_de_estudio/
 *.txt
+# Credenciales OAuth "Aplicación web" y tokens por persona (panel web)
+client_secret_web.json
+tokens/

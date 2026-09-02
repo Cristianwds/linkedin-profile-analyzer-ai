@@ -29,11 +29,16 @@ load_dotenv()
 # ==============================================================================
 
 # 1. Credenciales de Drive
+# Los dos scopes de identidad (openid + userinfo.email) no los usa el pipeline en sí, pero hacen
+# falta para que el backend web sepa QUIÉN se logueó (ver web_app.py) — se incluyen acá para que
+# tanto el login de consola como el login web pidan siempre el mismo combo de permisos.
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/spreadsheets',  # Permiso para editar el spread sheet
     'https://www.googleapis.com/auth/documents',       # Permiso para inyectar texto en Docs
-    'https://www.googleapis.com/auth/presentations'   # Permiso para inyectar en las presentaciones
+    'https://www.googleapis.com/auth/presentations',   # Permiso para inyectar en las presentaciones
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
 ]
 
 # Obtenemos los IDs y credenciales de forma segura
@@ -214,51 +219,62 @@ deben afectar "puntaje_general" ni "color_semaforo".
 """
 
 # ==============================================================================
-# MÓDULO DE AUTENTICACIÓN UNIFICADO (OAuth 2.0 - Usuario Real)
+# MÓDULO DE AUTENTICACIÓN (OAuth 2.0)
 # ==============================================================================
+# Separado en dos capas:
+#
+#   1. CONSEGUIR credenciales (Credentials): hay dos formas de llegar a un objeto Credentials
+#      válido — autenticar_google_cli() abajo (login de escritorio, un solo token.json
+#      compartido, pensado para correr `python main.py` a mano) o el login web por persona que
+#      vive en web_app.py (cada usuario logueado en el navegador tiene su propio archivo de
+#      token en tokens/, ver web_app.py). main.py no sabe ni le importa cuál de las dos se usó.
+#
+#   2. CONSTRUIR el servicio de Google a partir de esas credenciales (construir_servicio_*):
+#      esto es lo mismo sin importar de dónde salieron las credenciales, así que el resto del
+#      pipeline (ejecutar_pipeline, etc.) recibe siempre un objeto Credentials ya resuelto y
+#      arma los servicios con las funciones de abajo.
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
 
-def autenticar_google():
-    """Autentica al usuario mediante OAuth 2.0 y maneja el archivo token.json."""
+def autenticar_google_cli():
+    """
+    Login de escritorio para uso por CONSOLA (`python main.py`): un solo token.json compartido
+    en la raíz del repo, pensado para correrlo a mano una persona a la vez. El panel web NO usa
+    esta función — ahí cada persona tiene su propio login y su propio archivo en tokens/
+    (ver web_app.py: auth_login / auth_callback / cargar_credenciales_usuario).
+    """
     creds = None
 
-    # El archivo token.json almacena las credenciales de acceso del usuario.
-    # Se crea automáticamente la primera vez que se completa el flujo de inicio de sesión.
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
 
-    # Si no hay credenciales válidas (o expiraron), dejamos que el usuario inicie sesión.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
             except Exception:
-                # Si falla la renovación por seguridad, borramos el token viejo para forzar login
                 os.remove('token.json')
                 creds = None
 
         if not creds:
-            # Buscamos el archivo que descargaste de la consola de Google Cloud
             flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
             creds = flow.run_local_server(port=0)
 
-        # Guardamos las credenciales en tu PC para la próxima vez
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
 
     return creds
 
 
-def autenticar_drive():
-    """Conecta con Google Drive usando tus credenciales de usuario."""
+def construir_servicio_drive(creds):
+    """Arma el cliente de Drive a partir de un objeto Credentials ya resuelto (sin importar si
+    vino del login de consola o del login web de una persona puntual)."""
     try:
-        creds = autenticar_google()
         return build('drive', 'v3', credentials=creds)
     except Exception as e:
-        print(f"Error de autenticación en Drive: {e}")
+        print(f"Error al construir el servicio de Drive: {e}")
         return None
 
 
@@ -462,84 +478,86 @@ CACHE_ANALISIS = cargar_cache()
 CARPETA_PLANES_DE_ESTUDIO = "planes_de_estudio"
 
 # Mapa de carreras de UdeSA: nombre canónico -> palabras clave para detectarla en el texto crudo
-# del PDF (sin usar IA) + nombre del archivo con su plan de estudios. Sumá una entrada nueva acá
-# por cada carrera para la que cargues un plan; si una carrera no está en este diccionario, el
-# perfil se analiza igual, pero sin el contexto extra del plan de estudios.
-CARRERAS_UDESA = {
-    "Ingeniería en Inteligencia Artificial": {
-        "palabras_clave": ["ingeniería en inteligencia artificial", "ingeniería en ia"],
-        "archivo_plan": "ingenieria_en_inteligencia_artificial.txt",
-    },
-    "Licenciatura en Negocios Digitales": {
-        "palabras_clave": ["negocios digitales"],
-        "archivo_plan": "negocios_digitales.txt",
-    },
-    "Licenciatura en Ciencias del Comportamiento": {
-        "palabras_clave": ["ciencias del comportamiento"],
-        "archivo_plan": "ciencias_del_comportamiento.txt",
-    },
-    "Licenciatura en Economía": {
-        "palabras_clave": ["licenciatura en economia", "licenciatura en economía"],
-        "archivo_plan": "economia.txt",
-    },
-    "Ingeniería en Biotecnología": {
-        "palabras_clave": ["ingeniería en biotecnología", "ingenieria en biotecnologia"],
-        "archivo_plan": "ingenieria_en_biotecnologia.txt",
-    },
-    "Abogacía": {
-        "palabras_clave": ["abogacía", "abogacia", "estudiante de abogacía"],
-        "archivo_plan": "abogacia.txt",
-    },
-    "Licenciatura en Administración de Empresas": {
-        "palabras_clave": ["licenciatura en administración de empresas", "licenciatura en administracion de empresas"],
-        "archivo_plan": "administracion.txt",
-    },
-    "Licenciatura en Ciencias de la Educación": {
-        "palabras_clave": ["ciencias de la educación", "ciencias de la educacion"],
-        "archivo_plan": "ciencias_educacion.txt",
-    },
-    "Licenciatura en Ciencia Política y Gobierno": {
-        "palabras_clave": ["ciencia política", "ciencias políticas", "ciencia politica"],
-        "archivo_plan": "ciencias_politicas.txt",
-    },
-    "Licenciatura en Comunicación": {
-        "palabras_clave": ["licenciatura en comunicación", "licenciatura en comunicacion"],
-        "archivo_plan": "comunicacion.txt",
-    },
-    "Licenciatura en Diseño": {
-        "palabras_clave": ["licenciatura en diseño", "licenciatura en diseno"],
-        "archivo_plan": "diseno.txt",
-    },
-    "Licenciatura en Economía Empresarial": {
-        "palabras_clave": ["economía empresarial", "economia empresarial"],
-        "archivo_plan": "economia_empresarial.txt",
-    },
-    "Licenciatura en Finanzas": {
-        "palabras_clave": ["licenciatura en finanzas"],
-        "archivo_plan": "finanzas.txt",
-    },
-    "Licenciatura en Humanidades": {
-        "palabras_clave": ["licenciatura en humanidades"],
-        "archivo_plan": "humanidades.txt",
-    },
-    "Ingeniería Industrial": {
-        "palabras_clave": ["ingeniería industrial", "ingenieria industrial"],
-        "archivo_plan": "ingenieria_industrial.txt",
-    },
-    "Ingeniería en Sustentabilidad": {
-        "palabras_clave": ["ingeniería en sustentabilidad", "ingenieria en sustentabilidad"],
-        "archivo_plan": "ingenieria_sustentabilidad.txt",
-    },
-    "Profesorado en Educación Primaria": {
-        "palabras_clave": ["profesorado en educación primaria", "profesorado de educación primaria"],
-        "archivo_plan": "profesorado_educacion_primaria.txt",
-    },
-    "Licenciatura en Relaciones Internacionales": {
-        "palabras_clave": ["relaciones internacionales"],
-        "archivo_plan": "relaciones_internacionales.txt",
-    },
-    # TODO: agregar acá el resto de las carreras de UdeSA que se desee cubrir
-}
+# del PDF (sin usar IA) + nombre del archivo con su plan de estudios.
+#
+# NOTA: este diccionario YA NO se hardcodea acá. Vive en 'carreras.json' (mismo nivel que este
+# archivo) para que se pueda agregar/editar/borrar carreras desde la web sin tocar código ni
+# redeployar. Si el archivo no existe todavía (primera vez), se crea vacío. Usá
+# agregar_o_actualizar_carrera() / eliminar_carrera() en vez de mutar CARRERAS_UDESA a mano,
+# así queda todo persistido en el JSON.
+ARCHIVO_CARRERAS = "carreras.json"
+
+
+def cargar_carreras():
+    if os.path.exists(ARCHIVO_CARRERAS):
+        try:
+            with open(ARCHIVO_CARRERAS, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"   [⚠️ No se pudo leer '{ARCHIVO_CARRERAS}', se usa configuración vacía: {e}]")
+    return {}
+
+
+def guardar_carreras(carreras):
+    with open(ARCHIVO_CARRERAS, 'w', encoding='utf-8') as f:
+        json.dump(carreras, f, ensure_ascii=False, indent=2)
+
+
+CARRERAS_UDESA = cargar_carreras()
+
+
+def recargar_carreras():
+    """Vuelve a leer carreras.json del disco y actualiza CARRERAS_UDESA in-place (mismo dict,
+    mismas referencias) para que el resto de las funciones que ya lo tienen importado vean el
+    cambio sin reiniciar el proceso."""
+    CARRERAS_UDESA.clear()
+    CARRERAS_UDESA.update(cargar_carreras())
+    return CARRERAS_UDESA
+
+
+def _slug_archivo_plan(nombre_carrera):
+    """Nombre de archivo .txt derivado del nombre de la carrera (minúsculas, sin tildes,
+    espacios -> guion bajo), para cuando se crea una carrera nueva desde la web y no se
+    especifica un archivo_plan a mano."""
+    base = _normalizar_texto(nombre_carrera)
+    base = re.sub(r'[^a-z0-9]+', '_', base).strip('_')
+    return f"{base}.txt"
+
+
+def agregar_o_actualizar_carrera(nombre_carrera, palabras_clave, archivo_plan=None):
+    """Crea o actualiza una entrada de CARRERAS_UDESA y persiste en carreras.json.
+    Si la carrera ya existía y no se pasa archivo_plan, conserva el que tenía (para no romper
+    el link a un plan ya cargado al editar solo las palabras clave)."""
+    nombre_carrera = nombre_carrera.strip()
+    if not nombre_carrera:
+        raise ValueError("El nombre de la carrera no puede estar vacío.")
+
+    palabras_clave = [p.strip() for p in palabras_clave if p.strip()]
+    if not palabras_clave:
+        raise ValueError("Hace falta al menos una palabra clave para detectar la carrera.")
+
+    existente = CARRERAS_UDESA.get(nombre_carrera, {})
+    CARRERAS_UDESA[nombre_carrera] = {
+        "palabras_clave": palabras_clave,
+        "archivo_plan": archivo_plan or existente.get("archivo_plan") or _slug_archivo_plan(nombre_carrera),
+    }
+    guardar_carreras(CARRERAS_UDESA)
+    return CARRERAS_UDESA[nombre_carrera]
+
+
+def eliminar_carrera(nombre_carrera, borrar_archivo_plan=False):
+    """Saca la carrera de CARRERAS_UDESA y persiste. Por defecto NO borra el .txt del plan del
+    disco (podría estar linkeado desde otro lado o quererse reusar); pasá borrar_archivo_plan=True
+    para borrarlo también."""
+    datos = CARRERAS_UDESA.pop(nombre_carrera, None)
+    if datos is None:
+        return False
+    guardar_carreras(CARRERAS_UDESA)
+    if borrar_archivo_plan:
+        ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, datos.get("archivo_plan", ""))
+        if datos.get("archivo_plan") and os.path.exists(ruta):
+            os.remove(ruta)
+    return True
 
 
 def _normalizar_texto(texto):
@@ -735,22 +753,28 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None):
 # MÓDULO 3: GOOGLE SHEETS (Escritura de Matriz Actualizada)
 # ==============================================================================
 
-def autenticar_sheets():
-    """Conecta con Google Sheets usando tus credenciales de usuario."""
+def construir_servicio_sheets(creds):
+    """Arma el cliente de Sheets a partir de un objeto Credentials ya resuelto."""
     try:
-        creds = autenticar_google()
         return build('sheets', 'v4', credentials=creds)
     except Exception as e:
-        print(f"Error de autenticación en Sheets: {e}")
+        print(f"Error al construir el servicio de Sheets: {e}")
         return None
 
-def autenticar_slides():
-    """Conecta con Google Slides usando tus credenciales de usuario."""
+def construir_servicio_slides(creds):
+    """Arma el cliente de Slides a partir de un objeto Credentials ya resuelto."""
     try:
-        creds = autenticar_google()
         return build('slides', 'v1', credentials=creds)
     except Exception as e:
-        print(f"Error de autenticación en Slides: {e}")
+        print(f"Error al construir el servicio de Slides: {e}")
+        return None
+
+def construir_servicio_docs(creds):
+    """Arma el cliente de Docs a partir de un objeto Credentials ya resuelto."""
+    try:
+        return build('docs', 'v1', credentials=creds)
+    except Exception as e:
+        print(f"Error al construir el servicio de Docs: {e}")
         return None
 
 NOMBRE_HOJA_PLANTILLA = "Plantilla"
@@ -1122,10 +1146,13 @@ def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
     }
 
 
-def generar_documento_informe(servicio_drive, id_plantilla, id_carpeta_destino, datos_alumno, fecha_hoy):
+def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_carpeta_destino, datos_alumno, fecha_hoy):
     """
     Genera el informe de un alumno copiando la plantilla de Google Docs y
     reemplazando los placeholders {{...}} por la información analizada por la IA.
+
+    servicio_docs se recibe ya armado (construir_servicio_docs(creds), una sola vez por corrida
+    del pipeline) en vez de autenticarse de nuevo por cada alumno.
     """
     apellido = datos_alumno.get('apellido_estudiante', '')
     nombre = datos_alumno.get('nombre_estudiante', 'Desconocido')
@@ -1147,11 +1174,7 @@ def generar_documento_informe(servicio_drive, id_plantilla, id_carpeta_destino, 
         ).execute()
         doc_id = copia.get('id')
 
-        # 2. Autenticamos el servicio de Google Docs
-        creds = autenticar_google()
-        servicio_docs = build('docs', 'v1', credentials=creds)
-
-        # 3. Armamos un request de tipo replaceAllText por cada placeholder
+        # 2. Armamos un request de tipo replaceAllText por cada placeholder
         mapa_reemplazos = construir_mapa_reemplazos(datos_alumno, fecha_hoy)
 
         pedidos = []
@@ -1226,7 +1249,7 @@ def _preguntar_modo_analisis():
 
     return None
 
-def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
+def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
     """
     Corre el pipeline completo: extrae los PDFs pendientes de la carpeta de Drive, los analiza
     con la IA, escribe los resultados en Sheets y genera los informes individuales en Docs.
@@ -1234,6 +1257,12 @@ def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
     Se separó del bloque `if __name__ == "__main__":` para que, además del script de consola de
     siempre (`python main.py`), también la pueda invocar el backend web (FastAPI) sin duplicar
     lógica.
+
+    creds: objeto Credentials YA resuelto (ver MÓDULO DE AUTENTICACIÓN más arriba). El script de
+    consola lo consigue con autenticar_google_cli(); el backend web lo consigue del login de la
+    persona que está usando el panel (cada quien con su propia cuenta, ver web_app.py). Todo lo
+    que este pipeline haga en Drive/Sheets/Docs/Slides queda hecho con la identidad de esas
+    credenciales — no hay un usuario "del sistema" compartido.
 
     callback_progreso, si se pasa, es una función con la forma
     callback_progreso(mensaje: str, procesados: int, total: int) — pensada para que el backend
@@ -1245,19 +1274,12 @@ def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
     el lote se analiza como si fuera de esa carrera (modo "cohorte completa"), avisando por
     perfil si el texto no la menciona. Si es None, cada perfil usa su propia detección
     automática (modo "conjunto mixto"). El script de consola lo pide con _preguntar_modo_analisis()
-    antes de llamar a esta función; el backend web lo pasaría directo.
+    antes de llamar a esta función; el backend web lo pasa directo desde el selector de la web.
 
-    Devuelve un diccionario resumen (útil para el dashboard web):
-        {
-            "fecha": "dd/mm/aaaa",
-            "total_pdfs": int,
-            "analizados": int,
-            "fallidos": int,
-            "resultados": [ ... lista de JSONs de análisis ... ]
-        }
+    Devuelve un diccionario resumen (útil para el dashboard web, ver construir_resumen_pipeline).
 
-    Lanza RuntimeError si falla la autenticación con Drive, para que el backend web pueda
-    distinguir ese caso de "no había perfiles para analizar".
+    Lanza RuntimeError si falla la construcción del servicio de Drive, para que el backend web
+    pueda distinguir ese caso de "no había perfiles para analizar".
     """
     def _avisar(mensaje, procesados=0, total=0):
         print(mensaje)
@@ -1279,9 +1301,9 @@ def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
         print("⚠️  ADVERTENCIA: No se encontró ID_CARPETA_ANALIZADOS en el archivo .env.")
         print("   Los perfiles analizados no se moverán hasta configurar esa variable.")
 
-    servicio_drive = autenticar_drive()
+    servicio_drive = construir_servicio_drive(creds)
     if not servicio_drive:
-        raise RuntimeError("No se pudo autenticar con Google Drive. Revisá las credenciales.")
+        raise RuntimeError("No se pudo construir el servicio de Google Drive. Revisá las credenciales.")
 
     lista_pdfs = listar_pdfs_en_carpeta(servicio_drive, ID_CARPETA)
     total_pdfs = len(lista_pdfs)
@@ -1333,19 +1355,20 @@ def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
         print("-" * 40)
 
     # PASO 3: Escribir en la hoja diaria y en el Histórico
-    servicio_sheets = autenticar_sheets()
+    servicio_sheets = construir_servicio_sheets(creds)
     if servicio_sheets and resultados_finales:
         nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
         escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy)
         escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy)
         actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy)
-        servicio_slides = autenticar_slides()
+        servicio_slides = construir_servicio_slides(creds)
         if servicio_slides and ID_PRESENTACION_STATS:
             refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS, OBJECT_IDS_GRAFICOS_STATS)
 
     # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
     if ID_PLANTILLA_INFORME and resultados_finales:
         _avisar("\nIniciando fase de creación de reportes individuales...", len(resultados_finales), total_pdfs)
+        servicio_docs = construir_servicio_docs(creds)
         carpeta_informes_hoy = obtener_o_crear_subcarpeta(
             servicio_drive, ID_CARPETA_INFORMES, fecha_iso
         )
@@ -1358,6 +1381,7 @@ def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
                 )
             generar_documento_informe(
                 servicio_drive,
+                servicio_docs,
                 ID_PLANTILLA_INFORME,
                 carpetas_carrera_hoy[nombre_carpeta],
                 resultado,
@@ -1366,15 +1390,58 @@ def ejecutar_pipeline(callback_progreso=None, carrera_cohorte=None):
 
     _avisar("🎉 PIPELINE FINALIZADO.", total_pdfs, total_pdfs)
 
+    return construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso)
+
+
+def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso):
+    """
+    Arma el diccionario resumen final del pipeline: conteos por semáforo, por carrera, alumnos
+    fallidos/exitosos y links directos a Sheets/Slides, pensado para mostrarse tal cual en el
+    dashboard web al terminar una corrida.
+    """
+    conteo_semaforo = {"Verde": 0, "Amarillo": 0, "Rojo": 0}
+    conteo_por_carrera = {}
+    alumnos = []
+
+    for resultado in resultados_finales:
+        semaforo = resultado.get('color_semaforo', 'Error')
+        if semaforo in conteo_semaforo:
+            conteo_semaforo[semaforo] += 1
+
+        carrera = resultado.get('carrera_estudiante') or 'Sin carrera detectada'
+        conteo_por_carrera[carrera] = conteo_por_carrera.get(carrera, 0) + 1
+
+        alumnos.append({
+            "nombre": f"{resultado.get('nombre_estudiante', 'Desconocido')} {resultado.get('apellido_estudiante', '')}".strip(),
+            "carrera": carrera,
+            "puntaje": resultado.get('puntaje_general', 0),
+            "semaforo": semaforo,
+            "url_perfil": resultado.get('url_perfil'),
+        })
+
+    links = {}
+    if ID_SPREADSHEET:
+        links["planilla"] = f"https://docs.google.com/spreadsheets/d/{ID_SPREADSHEET}/edit"
+    if ID_CARPETA_INFORMES:
+        links["carpeta_informes"] = f"https://drive.google.com/drive/folders/{ID_CARPETA_INFORMES}"
+    if ID_PRESENTACION_STATS:
+        links["presentacion_estadisticas"] = f"https://docs.google.com/presentation/d/{ID_PRESENTACION_STATS}/edit"
+
     return {
         "fecha": fecha_hoy,
+        "fecha_iso": fecha_iso,
         "total_pdfs": total_pdfs,
         "analizados": len(resultados_finales),
         "fallidos": total_pdfs - len(resultados_finales),
+        "conteo_semaforo": conteo_semaforo,
+        "conteo_por_carrera": conteo_por_carrera,
+        "alumnos": alumnos,
+        "links": links,
         "resultados": resultados_finales,
     }
 
 
 if __name__ == "__main__":
+    creds_cli = autenticar_google_cli()
     carrera_cohorte = _preguntar_modo_analisis()
-    ejecutar_pipeline(carrera_cohorte=carrera_cohorte)
+    ejecutar_pipeline(creds_cli, carrera_cohorte=carrera_cohorte)

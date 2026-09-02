@@ -424,6 +424,82 @@ def guardar_txt(texto, nombre_archivo):
     return ruta_salida
 
 
+def extraer_texto_de_pdf(ruta_pdf, incluir_texto_crudo=False, callback_aviso=None):
+    """
+    Corazón reutilizable del script: toma la ruta a un PDF de plan de estudios y devuelve
+    (texto_final, metodo_usado, avisos), sin tocar la consola ni el disco. Se separó del main()
+    de CLI para que tanto la terminal como el backend web (subida de un plan desde la web para
+    crear/actualizar una carrera) usen exactamente la misma lógica de extracción.
+
+    metodo_usado: uno de "grilla", "tablas", "ia", "crudo" — útil para que quien llame (la web,
+    por ejemplo) le muestre al usuario qué tan confiable salió la extracción (el método "crudo"
+    significa que ningún método automático funcionó y hace falta revisión manual).
+
+    callback_aviso, si se pasa, es una función callback_aviso(mensaje: str) que recibe los mismos
+    avisos que el CLI imprime por consola, para que el caller (ej. el backend web) los pueda
+    reenviar como parte del progreso en vivo. Si no se pasa, no se imprime ni reenvía nada (a
+    diferencia del CLI, que sigue usando print() directo en su propio wrapper más abajo).
+
+    Lanza ValueError si el PDF no tiene ni texto ni grilla extraíble (PDF escaneado como imagen).
+    """
+    def _avisar(mensaje):
+        if callback_aviso:
+            callback_aviso(mensaje)
+
+    with pdfplumber.open(ruta_pdf) as pdf:
+        texto_plano = extraer_texto_plano(pdf)
+        grilla = extraer_grilla_de_pdf(pdf)
+
+        if not texto_plano.strip() and not grilla:
+            raise ValueError(
+                "No se pudo extraer texto ni reconstruir ninguna grilla del PDF "
+                "(¿está escaneado como imagen? En ese caso hace falta OCR)."
+            )
+
+        partes_finales = []
+        metodo_usado = None
+
+        if grilla:
+            total_materias = sum(len(m) for m in grilla.values())
+            _avisar(f"📐 Grilla reconstruida por posición: {total_materias} materias en {len(grilla)} columna(s)")
+            partes_finales.append(grilla_a_texto(grilla))
+            metodo_usado = "grilla"
+        else:
+            _avisar("ℹ️ No se pudo reconstruir la grilla por posición. Probando por líneas/bordes del PDF...")
+            tablas = extraer_tablas(pdf)
+            if tablas:
+                _avisar(f"📊 Se detectaron {len(tablas)} tabla(s) de materias por año, vía líneas/bordes del PDF")
+                for tabla in tablas:
+                    texto_tabla = tabla_a_texto(tabla)
+                    if texto_tabla:
+                        partes_finales.append(texto_tabla)
+                if partes_finales:
+                    metodo_usado = "tablas"
+            if not partes_finales:
+                _avisar("ℹ️ Tampoco se detectó ninguna grilla por líneas/bordes. Probando reordenar el texto con IA...")
+                texto_reordenado = reordenar_con_ia(texto_plano)
+                if texto_reordenado:
+                    partes_finales.append(texto_reordenado.strip())
+                    metodo_usado = "ia"
+                    _avisar("✨ Reordenamiento con IA completado")
+
+        # Red de seguridad: si ningún método anterior funcionó, no dejamos un .txt vacío en
+        # silencio (que fue justamente el bug original) — guardamos el texto crudo con una
+        # advertencia bien visible, para que quede algo revisable a mano.
+        if not partes_finales:
+            _avisar("⚠️ Ningún método de reconstrucción funcionó. Se guarda el texto crudo como respaldo.")
+            metodo_usado = "crudo"
+            partes_finales.append(
+                "⚠️ NO SE PUDO RECONSTRUIR LA GRILLA AUTOMÁTICAMENTE — TEXTO CRUDO SIN ORDENAR, REVISAR A MANO.\n"
+                "--------------------------------------------------------------------------------\n"
+                + texto_plano.strip()
+            )
+        elif incluir_texto_crudo:
+            partes_finales.append("--- TEXTO COMPLETO EXTRAÍDO (referencia / verificación) ---\n" + texto_plano.strip())
+
+    return "\n\n".join(partes_finales), metodo_usado
+
+
 def main():
     incluir_texto_crudo = '--con-crudo' in sys.argv
     argumentos = [a for a in sys.argv[1:] if a != '--con-crudo']
@@ -442,53 +518,17 @@ def main():
         sys.exit(1)
 
     print(f"📄 Procesando: {ruta_pdf}")
-    with pdfplumber.open(ruta_pdf) as pdf:
-        texto_plano = extraer_texto_plano(pdf)
-        grilla = extraer_grilla_de_pdf(pdf)
+    try:
+        texto_final, metodo_usado = extraer_texto_de_pdf(
+            ruta_pdf, incluir_texto_crudo=incluir_texto_crudo, callback_aviso=lambda m: print(f"   [{m}]")
+        )
+    except ValueError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
 
-        if not texto_plano.strip() and not grilla:
-            print("❌ No se pudo extraer texto ni reconstruir ninguna grilla del PDF (¿está escaneado como imagen? En ese caso hace falta OCR, avisame).")
-            sys.exit(1)
-
-        partes_finales = []
-
-        if grilla:
-            total_materias = sum(len(m) for m in grilla.values())
-            print(f"   [📐 Grilla reconstruida por posición: {total_materias} materias en {len(grilla)} columna(s)]")
-            partes_finales.append(grilla_a_texto(grilla))
-        else:
-            print("   [ℹ️ No se pudo reconstruir la grilla por posición. Probando por líneas/bordes del PDF...]")
-            tablas = extraer_tablas(pdf)
-            if tablas:
-                print(f"   [📊 Se detectaron {len(tablas)} tabla(s) de materias por año, vía líneas/bordes del PDF]")
-                for tabla in tablas:
-                    texto_tabla = tabla_a_texto(tabla)
-                    if texto_tabla:
-                        partes_finales.append(texto_tabla)
-            if not partes_finales:
-                print("   [ℹ️ Tampoco se detectó ninguna grilla por líneas/bordes. Probando reordenar el texto con IA...]")
-                texto_reordenado = reordenar_con_ia(texto_plano)
-                if texto_reordenado:
-                    partes_finales.append(texto_reordenado.strip())
-                    print("   [✨ Reordenamiento con IA completado]")
-
-        # Red de seguridad: si ningún método anterior funcionó, no dejamos un .txt vacío en
-        # silencio (que fue justamente el bug original) — guardamos el texto crudo con una
-        # advertencia bien visible, para que quede algo revisable a mano.
-        if not partes_finales:
-            print("   [⚠️ Ningún método de reconstrucción funcionó. Se guarda el texto crudo como respaldo.]")
-            partes_finales.append(
-                "⚠️ NO SE PUDO RECONSTRUIR LA GRILLA AUTOMÁTICAMENTE — TEXTO CRUDO SIN ORDENAR, REVISAR A MANO.\n"
-                "--------------------------------------------------------------------------------\n"
-                + texto_plano.strip()
-            )
-        elif incluir_texto_crudo:
-            partes_finales.append("--- TEXTO COMPLETO EXTRAÍDO (referencia / verificación) ---\n" + texto_plano.strip())
-
-    texto_final = "\n\n".join(partes_finales)
     ruta_guardada = guardar_txt(texto_final, nombre_archivo)
 
-    print(f"✅ Listo. Se guardó en: {ruta_guardada}")
+    print(f"✅ Listo. Se guardó en: {ruta_guardada} (método: {metodo_usado})")
     print(f"   ({len(texto_final)} caracteres)")
     print("\n⚠️  Revisalo antes de usarlo: fijate que no falte ninguna materia y que estén en el "
           "año correcto. Corré con --con-crudo si querés el texto completo sin procesar al "

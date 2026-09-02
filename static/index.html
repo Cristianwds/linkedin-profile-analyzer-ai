@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Desarrollo Profesional · Análisis de Perfiles de LinkedIn — UdeSA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --azul:#004a92;
+    --azul-claro:#4f75ff;
+    --menta:#9cffeb;
+    --fondo:#f4f6fb;
+    --panel:#ffffff;
+    --borde:#e2e6f0;
+    --texto:#1c2333;
+    --texto-tenue:#5c6376;
+    --verde:#1c9d6b;
+    --verde-bg:#e6f6ef;
+    --amarillo:#b8790b;
+    --amarillo-bg:#fdf2df;
+    --rojo:#c73f43;
+    --rojo-bg:#fbe9e9;
+    --radio:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Libre Franklin',system-ui,sans-serif;
+    background:var(--fondo);
+    color:var(--texto);
+  }
+  a{color:var(--azul-claro);}
+
+  /* ---------- estructura general ---------- */
+  .app{display:flex; min-height:100vh;}
+
+  .nav{
+    width:230px;
+    background:var(--azul);
+    color:#fff;
+    display:flex;
+    flex-direction:column;
+    padding:28px 0;
+    flex-shrink:0;
+  }
+  .nav .marca{
+    padding:0 24px 24px;
+    border-bottom:1px solid rgba(255,255,255,.15);
+    margin-bottom:18px;
+  }
+  .nav .marca .sigla{
+    font-weight:800;
+    font-size:1.35rem;
+    letter-spacing:.02em;
+  }
+  .nav .marca .sub{
+    font-size:.8rem;
+    color:var(--menta);
+    margin-top:2px;
+  }
+  .nav button{
+    all:unset;
+    display:block;
+    cursor:pointer;
+    padding:13px 24px;
+    font-size:.95rem;
+    font-weight:500;
+    color:rgba(255,255,255,.78);
+    border-left:3px solid transparent;
+  }
+  .nav button:hover{color:#fff; background:rgba(255,255,255,.06);}
+  .nav button.activo{
+    color:#fff;
+    background:rgba(255,255,255,.1);
+    border-left-color:var(--menta);
+    font-weight:600;
+  }
+  .nav .estado-sistema{
+    margin-top:auto;
+    padding:16px 24px 0;
+    font-size:.78rem;
+    color:rgba(255,255,255,.6);
+    border-top:1px solid rgba(255,255,255,.15);
+  }
+  .nav .estado-sistema .fila{margin-top:6px; display:flex; gap:6px; align-items:center;}
+  .punto{width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0;}
+  .punto.ok{background:var(--menta);}
+  .punto.mal{background:#ff9d8a;}
+
+  main{flex:1; padding:36px 44px; max-width:1080px;}
+  h1{font-size:1.5rem; margin:0 0 4px;}
+  .lead{color:var(--texto-tenue); margin:0 0 28px; font-size:.95rem;}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--borde);
+    border-radius:var(--radio);
+    padding:24px;
+    margin-bottom:22px;
+  }
+  .panel h2{font-size:1.05rem; margin:0 0 4px;}
+  .panel .desc{color:var(--texto-tenue); font-size:.88rem; margin:0 0 18px;}
+
+  /* ---------- controles ---------- */
+  label{font-size:.85rem; font-weight:600; display:block; margin-bottom:6px;}
+  select, input[type=text]{
+    width:100%;
+    padding:9px 12px;
+    border:1px solid var(--borde);
+    border-radius:8px;
+    font-family:inherit;
+    font-size:.92rem;
+    background:#fff;
+  }
+  .fila-modo{display:flex; gap:14px; margin-bottom:16px;}
+  .opcion-modo{
+    flex:1;
+    border:1px solid var(--borde);
+    border-radius:8px;
+    padding:12px 14px;
+    cursor:pointer;
+    font-size:.88rem;
+  }
+  .opcion-modo.activa{border-color:var(--azul-claro); background:#eef2ff;}
+  .opcion-modo input{margin-right:8px;}
+
+  button.primario{
+    all:unset;
+    cursor:pointer;
+    background:var(--azul);
+    color:#fff;
+    padding:11px 22px;
+    border-radius:8px;
+    font-weight:600;
+    font-size:.92rem;
+  }
+  button.primario:hover{background:#003a75;}
+  button.primario:disabled{background:#a7b3c9; cursor:not-allowed;}
+
+  button.secundario{
+    all:unset;
+    cursor:pointer;
+    color:var(--azul);
+    padding:8px 14px;
+    border-radius:8px;
+    font-weight:600;
+    font-size:.85rem;
+    border:1px solid var(--azul-claro);
+  }
+  button.secundario:hover{background:#eef2ff;}
+
+  button.peligro{
+    all:unset;
+    cursor:pointer;
+    color:var(--rojo);
+    padding:6px 10px;
+    font-size:.82rem;
+    font-weight:600;
+  }
+  button.peligro:hover{text-decoration:underline;}
+
+  /* ---------- progreso / log ---------- */
+  .barra-progreso{
+    height:8px;
+    background:var(--borde);
+    border-radius:99px;
+    overflow:hidden;
+    margin:16px 0 10px;
+  }
+  .barra-progreso .relleno{
+    height:100%;
+    background:linear-gradient(90deg, var(--azul-claro), var(--azul));
+    width:0%;
+    transition:width .4s ease;
+  }
+  .estado-linea{font-size:.85rem; color:var(--texto-tenue); margin-bottom:14px;}
+  .log{
+    background:#0f1626;
+    color:#cfe0ff;
+    font-family:ui-monospace,'SF Mono',Consolas,monospace;
+    font-size:.78rem;
+    border-radius:8px;
+    padding:14px 16px;
+    max-height:260px;
+    overflow-y:auto;
+    line-height:1.55;
+    white-space:pre-wrap;
+  }
+
+  /* ---------- resumen final ---------- */
+  .grid-resumen{
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:14px;
+    margin:20px 0;
+  }
+  .tarjeta-metrica{
+    border:1px solid var(--borde);
+    border-radius:8px;
+    padding:14px 16px;
+  }
+  .tarjeta-metrica .num{font-size:1.6rem; font-weight:700;}
+  .tarjeta-metrica .etiqueta{font-size:.8rem; color:var(--texto-tenue);}
+  .tarjeta-metrica.verde{background:var(--verde-bg);}
+  .tarjeta-metrica.verde .num{color:var(--verde);}
+  .tarjeta-metrica.amarillo{background:var(--amarillo-bg);}
+  .tarjeta-metrica.amarillo .num{color:var(--amarillo);}
+  .tarjeta-metrica.rojo{background:var(--rojo-bg);}
+  .tarjeta-metrica.rojo .num{color:var(--rojo);}
+
+  .links-resumen{display:flex; gap:10px; flex-wrap:wrap; margin:6px 0 20px;}
+  .links-resumen a{
+    border:1px solid var(--azul-claro);
+    padding:8px 14px;
+    border-radius:8px;
+    font-size:.85rem;
+    font-weight:600;
+    text-decoration:none;
+  }
+
+  table{width:100%; border-collapse:collapse; font-size:.87rem;}
+  th{
+    text-align:left;
+    font-size:.75rem;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    color:var(--texto-tenue);
+    border-bottom:1px solid var(--borde);
+    padding:8px 10px;
+  }
+  td{padding:9px 10px; border-bottom:1px solid #edf0f7;}
+  .chip{
+    display:inline-block;
+    padding:2px 10px;
+    border-radius:99px;
+    font-size:.78rem;
+    font-weight:600;
+  }
+  .chip.verde{background:var(--verde-bg); color:var(--verde);}
+  .chip.amarillo{background:var(--amarillo-bg); color:var(--amarillo);}
+  .chip.rojo{background:var(--rojo-bg); color:var(--rojo);}
+
+  /* ---------- carreras ---------- */
+  .fila-carrera{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:12px 0;
+    border-bottom:1px solid #edf0f7;
+  }
+  .fila-carrera:last-child{border-bottom:none;}
+  .fila-carrera .info{flex:1;}
+  .fila-carrera .nombre{font-weight:600; font-size:.92rem;}
+  .fila-carrera .kw{color:var(--texto-tenue); font-size:.8rem; margin-top:2px;}
+  .plan-badge{font-size:.78rem; font-weight:600; padding:3px 10px; border-radius:99px;}
+  .plan-badge.si{background:var(--verde-bg); color:var(--verde);}
+  .plan-badge.no{background:var(--amarillo-bg); color:var(--amarillo);}
+
+  .form-nueva-carrera{display:grid; grid-template-columns:1fr 1fr auto; gap:12px; align-items:end; margin-top:18px;}
+
+  .oculto{display:none !important;}
+  .mensaje-error{background:var(--rojo-bg); color:var(--rojo); padding:10px 14px; border-radius:8px; font-size:.85rem; margin-bottom:14px;}
+  .mensaje-ok{background:var(--verde-bg); color:var(--verde); padding:10px 14px; border-radius:8px; font-size:.85rem; margin-bottom:14px;}
+
+  input[type=file]{font-size:.82rem;}
+
+  /* ---------- login gate ---------- */
+  .pantalla-login{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:18px;
+    text-align:center;
+    padding:20px;
+  }
+  .pantalla-login .marca-login{
+    font-weight:800;
+    font-size:1.5rem;
+    color:var(--azul);
+  }
+  .pantalla-login .sub-login{color:var(--texto-tenue); max-width:380px; font-size:.92rem;}
+  .btn-google{
+    all:unset;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    background:#fff;
+    border:1px solid var(--borde);
+    padding:11px 22px;
+    border-radius:8px;
+    font-weight:600;
+    font-size:.92rem;
+    box-shadow:0 1px 2px rgba(0,0,0,.06);
+  }
+  .btn-google:hover{border-color:var(--azul-claro);}
+  .barra-usuario{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    padding:0 24px 16px;
+    font-size:.78rem;
+    color:rgba(255,255,255,.75);
+    border-bottom:1px solid rgba(255,255,255,.15);
+    margin-bottom:14px;
+  }
+  .barra-usuario a{color:var(--menta); text-decoration:none; font-weight:600;}
+  .barra-usuario a:hover{text-decoration:underline;}
+  .email-usuario{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+</style>
+</head>
+<body>
+
+<div id="pantalla-login" class="pantalla-login oculto">
+  <div class="marca-login">UdeSA · Desarrollo Profesional</div>
+  <div class="sub-login">Análisis de perfiles de LinkedIn. Iniciá sesión con tu cuenta de Google institucional para correr el pipeline y gestionar carreras — todo lo que hagas queda registrado con tu propia cuenta.</div>
+  <div id="mensaje-login-error"></div>
+  <a href="/auth/login" class="btn-google">
+    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.5-2.1 14.2-5.6l-6.6-5.4C29.6 34.9 27 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.6 5.4C41.5 35.8 44 30.3 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
+    Iniciar sesión con Google
+  </a>
+</div>
+
+<div class="app oculto" id="app-principal">
+  <nav class="nav">
+    <div class="marca">
+      <div class="sigla">UdeSA · DP</div>
+      <div class="sub">Análisis de perfiles de LinkedIn</div>
+    </div>
+    <div class="barra-usuario">
+      <span class="email-usuario" id="email-usuario"></span>
+      <a href="/auth/logout">Salir</a>
+    </div>
+    <button data-tab="ejecutar" class="activo">Ejecutar análisis</button>
+    <button data-tab="carreras">Carreras y planes</button>
+    <div class="estado-sistema" id="panel-estado-sistema">
+      <div class="fila"><span class="punto ok"></span> Verificando…</div>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- ======================= TAB: EJECUTAR ======================= -->
+    <section id="tab-ejecutar">
+      <h1>Ejecutar el pipeline de análisis</h1>
+      <p class="lead">Analiza los perfiles pendientes en la carpeta de Drive, escribe la matriz en Sheets y genera los informes individuales en Docs.</p>
+
+      <div class="panel" id="panel-lanzar">
+        <h2>Perfiles a analizar</h2>
+        <p class="desc">Elegí si vas a correr una cohorte completa de una misma carrera, o un conjunto mixto de perfiles de distintas carreras.</p>
+
+        <div class="fila-modo">
+          <label class="opcion-modo activa" id="opcion-mixto">
+            <input type="radio" name="modo" value="mixto" checked> Conjunto mixto
+          </label>
+          <label class="opcion-modo" id="opcion-cohorte">
+            <input type="radio" name="modo" value="cohorte"> Cohorte de una carrera
+          </label>
+        </div>
+
+        <div id="selector-carrera" class="oculto" style="margin-bottom:16px;">
+          <label for="select-carrera-cohorte">Carrera</label>
+          <select id="select-carrera-cohorte"></select>
+        </div>
+
+        <div id="mensaje-lanzar"></div>
+        <button class="primario" id="btn-iniciar">Iniciar análisis</button>
+      </div>
+
+      <div class="panel oculto" id="panel-progreso">
+        <h2>Corriendo…</h2>
+        <div class="estado-linea" id="texto-progreso">Iniciando…</div>
+        <div class="barra-progreso"><div class="relleno" id="relleno-progreso"></div></div>
+        <div class="log" id="log-progreso"></div>
+      </div>
+
+      <div class="panel oculto" id="panel-resumen">
+        <h2>Resumen de la corrida</h2>
+        <p class="desc" id="resumen-fecha"></p>
+
+        <div class="grid-resumen">
+          <div class="tarjeta-metrica">
+            <div class="num" id="res-total">0</div>
+            <div class="etiqueta">Perfiles encontrados</div>
+          </div>
+          <div class="tarjeta-metrica">
+            <div class="num" id="res-analizados">0</div>
+            <div class="etiqueta">Analizados con éxito</div>
+          </div>
+          <div class="tarjeta-metrica verde">
+            <div class="num" id="res-verde">0</div>
+            <div class="etiqueta">🟢 Verde</div>
+          </div>
+          <div class="tarjeta-metrica amarillo">
+            <div class="num" id="res-amarillo">0</div>
+            <div class="etiqueta">🟡 Amarillo</div>
+          </div>
+        </div>
+
+        <div class="links-resumen" id="links-resumen"></div>
+
+        <table>
+          <thead>
+            <tr><th>Estudiante</th><th>Carrera</th><th>Puntaje</th><th>Semáforo</th></tr>
+          </thead>
+          <tbody id="tabla-alumnos"></tbody>
+        </table>
+
+        <div style="margin-top:18px;">
+          <button class="secundario" id="btn-nueva-corrida">Correr otro análisis</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= TAB: CARRERAS ======================= -->
+    <section id="tab-carreras" class="oculto">
+      <h1>Carreras y planes de estudio</h1>
+      <p class="lead">Cada carrera necesita palabras clave (para detectarla en el PDF del perfil) y, opcionalmente, el PDF del plan de estudios oficial — se usa como contexto extra para que la IA sugiera aptitudes y evalúe la coherencia del perfil con la carrera.</p>
+
+      <div class="panel">
+        <h2>Carreras configuradas</h2>
+        <p class="desc">El plan de estudios es opcional: sin él, el perfil se analiza igual, solo que sin ese contexto adicional.</p>
+        <div id="lista-carreras"></div>
+
+        <div class="form-nueva-carrera">
+          <div>
+            <label for="input-nombre-carrera">Nombre de la carrera nueva</label>
+            <input type="text" id="input-nombre-carrera" placeholder="Ej: Licenciatura en Matemática">
+          </div>
+          <div>
+            <label for="input-keywords-carrera">Palabras clave (separadas por coma)</label>
+            <input type="text" id="input-keywords-carrera" placeholder="Ej: licenciatura en matemática, matemática">
+          </div>
+          <button class="primario" id="btn-agregar-carrera">Agregar carrera</button>
+        </div>
+        <div id="mensaje-carreras" style="margin-top:14px;"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+const API = "";
+
+/* ---------------- gate de login ---------------- */
+async function iniciarApp(){
+  const params = new URLSearchParams(window.location.search);
+  const error = params.get('error');
+  if (error){
+    const mensajes = {
+      dominio_no_autorizado: 'Esa cuenta de Google no pertenece al dominio institucional autorizado.',
+      estado_invalido: 'El login no se pudo validar, probá de nuevo.',
+      login_fallido: 'No se pudo completar el login con Google.',
+      no_se_pudo_identificar: 'No se pudo obtener el email de la cuenta de Google.',
+    };
+    document.getElementById('mensaje-login-error').innerHTML =
+      `<div class="mensaje-error">${mensajes[error] || 'Ocurrió un error al iniciar sesión.'}</div>`;
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+
+  try{
+    const r = await fetch(`${API}/api/auth/estado`);
+    const d = await r.json();
+    if (d.autenticado){
+      document.getElementById('email-usuario').textContent = d.email;
+      document.getElementById('pantalla-login').classList.add('oculto');
+      document.getElementById('app-principal').classList.remove('oculto');
+      cargarEstadoSistema();
+      poblarSelectCarreras();
+    } else {
+      document.getElementById('app-principal').classList.add('oculto');
+      document.getElementById('pantalla-login').classList.remove('oculto');
+    }
+  }catch(e){
+    document.getElementById('app-principal').classList.add('oculto');
+    document.getElementById('pantalla-login').classList.remove('oculto');
+  }
+}
+
+/* Envoltorio para llamadas a /api/*: si la sesión expiró a mitad de uso (401), vuelve a
+   mostrar la pantalla de login en vez de dejar la UI en un estado raro. */
+async function apiFetch(url, opciones){
+  const r = await fetch(url, opciones);
+  if (r.status === 401){
+    document.getElementById('app-principal').classList.add('oculto');
+    document.getElementById('pantalla-login').classList.remove('oculto');
+  }
+  return r;
+}
+
+iniciarApp();
+
+/* ---------------- navegación entre tabs ---------------- */
+document.querySelectorAll(".nav button[data-tab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".nav button[data-tab]").forEach(b => b.classList.remove("activo"));
+    btn.classList.add("activo");
+    document.querySelectorAll("main > section").forEach(s => s.classList.add("oculto"));
+    document.getElementById("tab-" + btn.dataset.tab).classList.remove("oculto");
+    if (btn.dataset.tab === "carreras") cargarCarreras();
+  });
+});
+
+/* ---------------- estado del sistema (panel lateral) ---------------- */
+async function cargarEstadoSistema(){
+  const cont = document.getElementById("panel-estado-sistema");
+  try{
+    const r = await apiFetch(`${API}/api/sistema/estado`);
+    const d = await r.json();
+    let html = "";
+    html += `<div class="fila"><span class="punto ${d.token_google_presente ? 'ok':'mal'}"></span> Google ${d.token_google_presente ? 'conectado' : 'sin autenticar'}</div>`;
+    html += `<div class="fila"><span class="punto ${d.variables_env_faltantes.length===0 ? 'ok':'mal'}"></span> ${d.variables_env_faltantes.length===0 ? 'Configuración completa' : d.variables_env_faltantes.length+' variable(s) sin configurar'}</div>`;
+    html += `<div class="fila"><span class="punto ok"></span> ${d.carreras_configuradas} carreras cargadas</div>`;
+    cont.innerHTML = html;
+  }catch(e){
+    cont.innerHTML = `<div class="fila"><span class="punto mal"></span> No se pudo conectar al servidor</div>`;
+  }
+}
+
+/* ---------------- selector de modo (mixto / cohorte) ---------------- */
+const radios = document.querySelectorAll('input[name=modo]');
+radios.forEach(r => r.addEventListener('change', () => {
+  document.getElementById('opcion-mixto').classList.toggle('activa', r.value==='mixto' && r.checked);
+  document.getElementById('opcion-cohorte').classList.toggle('activa', r.value==='cohorte' && r.checked);
+  document.querySelectorAll('input[name=modo]').forEach(rr=>{
+    rr.closest('.opcion-modo').classList.toggle('activa', rr.checked);
+  });
+  document.getElementById('selector-carrera').classList.toggle('oculto', document.querySelector('input[name=modo]:checked').value !== 'cohorte');
+}));
+
+async function poblarSelectCarreras(){
+  const select = document.getElementById('select-carrera-cohorte');
+  try{
+    const r = await apiFetch(`${API}/api/carreras`);
+    const carreras = await r.json();
+    select.innerHTML = carreras.map(c => `<option value="${c.nombre}">${c.nombre}${c.tiene_plan ? '' : ' (sin plan cargado)'}</option>`).join('');
+  }catch(e){
+    select.innerHTML = `<option value="">No se pudieron cargar las carreras</option>`;
+  }
+}
+
+/* ---------------- lanzar y monitorear una corrida ---------------- */
+let intervaloPolling = null;
+
+document.getElementById('btn-iniciar').addEventListener('click', async () => {
+  const modo = document.querySelector('input[name=modo]:checked').value;
+  const carreraCohorte = modo === 'cohorte' ? document.getElementById('select-carrera-cohorte').value : null;
+  const msg = document.getElementById('mensaje-lanzar');
+  msg.innerHTML = '';
+
+  const btn = document.getElementById('btn-iniciar');
+  btn.disabled = true;
+  btn.textContent = 'Iniciando…';
+
+  try{
+    const r = await apiFetch(`${API}/api/pipeline/iniciar`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({carrera_cohorte: carreraCohorte})
+    });
+    const d = await r.json();
+    if (!r.ok){ throw new Error(d.detail || 'No se pudo iniciar el pipeline.'); }
+
+    document.getElementById('panel-lanzar').classList.add('oculto');
+    document.getElementById('panel-resumen').classList.add('oculto');
+    document.getElementById('panel-progreso').classList.remove('oculto');
+    document.getElementById('log-progreso').textContent = '';
+
+    monitorearCorrida(d.run_id);
+  }catch(e){
+    msg.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = 'Iniciar análisis';
+  }
+});
+
+function monitorearCorrida(runId){
+  intervaloPolling = setInterval(async () => {
+    const r = await apiFetch(`${API}/api/pipeline/estado/${runId}`);
+    const d = await r.json();
+
+    const logEl = document.getElementById('log-progreso');
+    logEl.textContent = d.log.join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+
+    const pct = d.total > 0 ? Math.round((d.procesados / d.total) * 100) : 0;
+    document.getElementById('relleno-progreso').style.width = pct + '%';
+    document.getElementById('texto-progreso').textContent =
+      d.total > 0 ? `Procesando perfil ${d.procesados} de ${d.total}…` : 'Preparando…';
+
+    if (d.estado === 'finalizado'){
+      clearInterval(intervaloPolling);
+      mostrarResumen(d.resumen);
+    } else if (d.estado === 'error'){
+      clearInterval(intervaloPolling);
+      document.getElementById('texto-progreso').textContent = '❌ ' + (d.error || 'Ocurrió un error.');
+    }
+  }, 2000);
+}
+
+function mostrarResumen(resumen){
+  document.getElementById('panel-progreso').classList.add('oculto');
+  const panel = document.getElementById('panel-resumen');
+  panel.classList.remove('oculto');
+
+  document.getElementById('resumen-fecha').textContent = `Corrida del ${resumen.fecha} — ${resumen.analizados} de ${resumen.total_pdfs} perfiles analizados con éxito${resumen.fallidos > 0 ? ` (${resumen.fallidos} fallidos, quedaron en Drive para reintentar)` : ''}.`;
+
+  document.getElementById('res-total').textContent = resumen.total_pdfs;
+  document.getElementById('res-analizados').textContent = resumen.analizados;
+  document.getElementById('res-verde').textContent = resumen.conteo_semaforo.Verde || 0;
+  document.getElementById('res-amarillo').textContent = resumen.conteo_semaforo.Amarillo || 0;
+
+  const links = document.getElementById('links-resumen');
+  links.innerHTML = '';
+  const etiquetas = {planilla: '📊 Ver planilla', carpeta_informes: '📁 Ver informes en Drive', presentacion_estadisticas: '📈 Ver estadísticas'};
+  for (const [clave, url] of Object.entries(resumen.links || {})){
+    links.innerHTML += `<a href="${url}" target="_blank">${etiquetas[clave] || clave}</a>`;
+  }
+
+  const tbody = document.getElementById('tabla-alumnos');
+  tbody.innerHTML = (resumen.alumnos || []).map(a => `
+    <tr>
+      <td>${a.url_perfil ? `<a href="${a.url_perfil}" target="_blank">${a.nombre}</a>` : a.nombre}</td>
+      <td>${a.carrera}</td>
+      <td>${a.puntaje}</td>
+      <td><span class="chip ${a.semaforo.toLowerCase()}">${a.semaforo}</span></td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('btn-nueva-corrida').addEventListener('click', () => {
+  document.getElementById('panel-resumen').classList.add('oculto');
+  document.getElementById('panel-lanzar').classList.remove('oculto');
+  const btn = document.getElementById('btn-iniciar');
+  btn.disabled = false;
+  btn.textContent = 'Iniciar análisis';
+  poblarSelectCarreras();
+});
+
+/* ---------------- gestión de carreras y planes ---------------- */
+async function cargarCarreras(){
+  const cont = document.getElementById('lista-carreras');
+  cont.innerHTML = '<p class="desc">Cargando…</p>';
+  const r = await apiFetch(`${API}/api/carreras`);
+  const carreras = await r.json();
+
+  cont.innerHTML = carreras.map(c => `
+    <div class="fila-carrera" data-carrera="${c.nombre}">
+      <div class="info">
+        <div class="nombre">${c.nombre}</div>
+        <div class="kw">${c.palabras_clave.join(', ')}</div>
+      </div>
+      <span class="plan-badge ${c.tiene_plan ? 'si' : 'no'}">${c.tiene_plan ? 'Plan cargado' : 'Sin plan'}</span>
+      <input type="file" accept="application/pdf" class="input-plan" style="max-width:150px;">
+      <button class="secundario btn-subir-plan">${c.tiene_plan ? 'Reemplazar' : 'Subir plan'}</button>
+      <button class="peligro btn-borrar-carrera">Eliminar</button>
+    </div>
+  `).join('') || '<p class="desc">Todavía no hay carreras configuradas.</p>';
+
+  cont.querySelectorAll('.fila-carrera').forEach(fila => {
+    const nombre = fila.dataset.carrera;
+
+    fila.querySelector('.btn-subir-plan').addEventListener('click', async () => {
+      const input = fila.querySelector('.input-plan');
+      if (!input.files.length){ alert('Elegí un PDF primero.'); return; }
+      const btn = fila.querySelector('.btn-subir-plan');
+      btn.textContent = 'Procesando…';
+
+      const formData = new FormData();
+      formData.append('archivo', input.files[0]);
+
+      try{
+        const r = await apiFetch(`${API}/api/carreras/${encodeURIComponent(nombre)}/plan`, {method:'POST', body: formData});
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'No se pudo procesar el PDF.');
+
+        const msg = document.getElementById('mensaje-carreras');
+        if (d.requiere_revision_manual){
+          msg.innerHTML = `<div class="mensaje-error">Plan de '${nombre}' guardado, pero con el método '${d.metodo_usado}' — convendría revisarlo a mano en planes_de_estudio/${d.archivo_guardado} antes de confiar en él del todo.</div>`;
+        } else {
+          msg.innerHTML = `<div class="mensaje-ok">Plan de '${nombre}' guardado correctamente (método: ${d.metodo_usado}, ${d.caracteres} caracteres).</div>`;
+        }
+        cargarCarreras();
+      }catch(e){
+        document.getElementById('mensaje-carreras').innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+        btn.textContent = 'Subir plan';
+      }
+    });
+
+    fila.querySelector('.btn-borrar-carrera').addEventListener('click', async () => {
+      if (!confirm(`¿Eliminar la carrera '${nombre}'? Esto no borra el PDF del plan de estudios, solo la deja de detectar en los perfiles.`)) return;
+      await apiFetch(`${API}/api/carreras/${encodeURIComponent(nombre)}`, {method:'DELETE'});
+      cargarCarreras();
+    });
+  });
+}
+
+document.getElementById('btn-agregar-carrera').addEventListener('click', async () => {
+  const nombre = document.getElementById('input-nombre-carrera').value.trim();
+  const keywords = document.getElementById('input-keywords-carrera').value.split(',').map(k => k.trim()).filter(Boolean);
+  const msg = document.getElementById('mensaje-carreras');
+
+  if (!nombre || keywords.length === 0){
+    msg.innerHTML = `<div class="mensaje-error">Completá el nombre y al menos una palabra clave.</div>`;
+    return;
+  }
+
+  try{
+    const r = await apiFetch(`${API}/api/carreras`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({nombre, palabras_clave: keywords})
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'No se pudo guardar la carrera.');
+
+    msg.innerHTML = `<div class="mensaje-ok">Carrera '${nombre}' guardada. Ahora podés subirle el PDF del plan de estudios.</div>`;
+    document.getElementById('input-nombre-carrera').value = '';
+    document.getElementById('input-keywords-carrera').value = '';
+    cargarCarreras();
+  }catch(e){
+    msg.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+  }
+});
+</script>
+</body>
+</html>
