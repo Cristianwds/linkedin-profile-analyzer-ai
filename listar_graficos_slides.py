@@ -1,9 +1,17 @@
 """
 listar_graficos_slides.py
 
-Script de UNA SOLA CORRIDA para obtener el objectId de cada gráfico vinculado (sheetsChart)
+Herramienta de INSPECCIÓN MANUAL: muestra el objectId de cada gráfico vinculado (sheetsChart)
 insertado en la presentación de estadísticas. Ejecutalo desde la misma carpeta que main.py
 (usa su misma autenticación de consola: autenticar_google_cli()).
+
+Ya NO hace falta correr esto como paso obligatorio del setup: main.py encuentra los gráficos
+vinculados solo (refrescar_graficos_slides() y desvincular_graficos_slides() leen la
+presentación con presentations().get() y buscan la propiedad 'sheetsChart' en cada elemento, sin
+depender de ninguna lista fija de IDs). Este script queda solo para cuando quieras curiosear a
+mano qué gráficos hay, a cuál chartId de Sheets apunta cada uno, o diagnosticar por qué alguno
+no se está refrescando (por ejemplo, si fue insertado como imagen pegada en vez de vinculado —
+en ese caso ni va a aparecer en esta lista).
 
 Requisitos antes de correrlo:
   1. Haber agregado 'https://www.googleapis.com/auth/presentations' a SCOPES en main.py.
@@ -16,10 +24,6 @@ Requisitos antes de correrlo:
 
 Uso:
     python listar_graficos_slides.py
-
-Volvés a correr este script cada vez que reordenes, borres o agregues gráficos en el Slides
-(cualquier cambio estructural les cambia el objectId), para actualizar la lista
-OBJECT_IDS_GRAFICOS_STATS en main.py.
 """
 
 import os
@@ -64,9 +68,11 @@ def listar_graficos_vinculados(id_presentacion):
         print("\n⚠️ No se encontró ningún gráfico vinculado (sheetsChart) en esta presentación.")
         print("   Revisá que los hayas insertado con 'Insertar > Gráfico > De Hojas de cálculo'")
         print("   y no como imagen pegada, y que ID_PRESENTACION_STATS sea el correcto.")
+        print("   (Ojo: si esta lista sale vacía, refrescar_graficos_slides() en main.py")
+        print("   tampoco va a encontrar nada para refrescar en la próxima corrida.)")
     else:
         print(f"\n✅ Se encontraron {len(encontrados)} gráficos vinculados.")
-        print("   Pasame esta lista completa para actualizar OBJECT_IDS_GRAFICOS_STATS en main.py.")
+        print("   main.py ya los detecta y refresca solo — esta lista es solo para tu referencia.")
 
     return encontrados
 

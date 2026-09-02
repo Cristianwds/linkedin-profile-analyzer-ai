@@ -13,7 +13,7 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
 from openai import OpenAI
 from groq import Groq
@@ -50,7 +50,16 @@ ID_PLANTILLA_INFORME = os.getenv('ID_PLANTILLA_INFORME')  # <-- NUEVO: ID del Go
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
+
+# ID_PRESENTACION_STATS ahora es la PLANTILLA de estadísticas: sus gráficos vinculados se
+# refrescan en cada corrida y, a partir de ese estado, se genera una COPIA nueva en
+# ID_CARPETA_PRESENTACIONES (una presentación por corrida, no se pisan entre sí — mismo patrón
+# que ID_PLANTILLA_INFORME con los informes individuales). Si ID_CARPETA_PRESENTACIONES no está
+# configurada, el pipeline sigue funcionando igual que antes: solo refresca la plantilla en el
+# lugar, sin generar copias.
 ID_PRESENTACION_STATS = os.getenv('ID_PRESENTACION_STATS')
+ID_CARPETA_PRESENTACIONES = os.getenv('ID_CARPETA_PRESENTACIONES')
+
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -781,16 +790,12 @@ NOMBRE_HOJA_PLANTILLA = "Plantilla"
 NOMBRE_HOJA_HISTORICO = "Histórico"
 NOMBRE_HOJA_ESTADISTICAS_DIA = "Estadísticas del Día" 
 
-OBJECT_IDS_GRAFICOS_STATS = [
-    "g3f4088a6156_1_0",
-    "g3f4088a6156_1_1",
-    "g3f4088a6156_1_2",
-    "g3f4088a6156_1_3",
-    "g3f4088a6156_1_4",
-    "g3f4088a6156_1_5",
-    "g3f4088a6156_1_6",
-    "g3f4088a6156_1_7",
-]
+# OBJECT_IDS_GRAFICOS_STATS ya no existe: refrescar_graficos_slides() y
+# desvincular_graficos_slides() encuentran los gráficos vinculados solas (leyendo la
+# presentación con presentations().get() y buscando la propiedad 'sheetsChart' en cada
+# elemento), así que agregar/sacar/reordenar gráficos en la plantilla no requiere tocar este
+# archivo. listar_graficos_slides.py queda solo como herramienta de inspección manual si alguna
+# vez hace falta ver a mano qué objectId tiene cada gráfico.
 
 def _obtener_metadata_hojas(servicio_sheets, spreadsheet_id):
     """Devuelve la lista de propiedades (sheetId, title, index) de cada hoja del spreadsheet."""
@@ -1064,13 +1069,37 @@ def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha
     except Exception as e:
         print(f"   [⚠️ No se pudo actualizar '{NOMBRE_HOJA_ESTADISTICAS_DIA}': {e}]")
 
-def refrescar_graficos_slides(servicio_slides, id_presentacion, object_ids):
+def refrescar_graficos_slides(servicio_slides, id_presentacion):
     """
-    Fuerza el refresh de los gráficos vinculados (sheetsChart) insertados en el Slides de
-    estadísticas, para que reflejen los valores recién escritos en 'Estadísticas del Día'.
+    Fuerza el refresh de TODOS los gráficos vinculados (sheetsChart) insertados en la
+    presentación, para que reflejen los valores recién escritos en 'Estadísticas del Día'.
+
+    Ya no depende de una lista fija de object_id a mantener a mano: lee la presentación con
+    presentations().get(), recorre sus slides, y encuentra sola cualquier elemento que tenga la
+    propiedad 'sheetsChart' — mismo mecanismo de detección que ya usa
+    desvincular_graficos_slides() sobre las copias. Así, agregar/sacar/reordenar gráficos en la
+    plantilla en Slides ya no requiere volver a correr listar_graficos_slides.py ni tocar main.py.
     """
-    if not id_presentacion or not object_ids:
+    if not id_presentacion:
         return
+
+    try:
+        presentacion = servicio_slides.presentations().get(presentationId=id_presentacion).execute()
+    except Exception as e:
+        print(f"   [⚠️ No se pudo leer la presentación para refrescar sus gráficos: {e}]")
+        return
+
+    object_ids = [
+        elemento['objectId']
+        for slide in presentacion.get('slides', [])
+        for elemento in slide.get('pageElements', [])
+        if elemento.get('sheetsChart')
+    ]
+
+    if not object_ids:
+        print("   [ℹ️ No se encontraron gráficos vinculados en la plantilla de estadísticas.]")
+        return
+
     peticiones = [{'refreshSheetsChart': {'objectId': oid}} for oid in object_ids]
     try:
         servicio_slides.presentations().batchUpdate(
@@ -1080,6 +1109,99 @@ def refrescar_graficos_slides(servicio_slides, id_presentacion, object_ids):
         print(f"✅ Se refrescaron {len(object_ids)} gráficos en el Slides de estadísticas.")
     except Exception as e:
         print(f"   [⚠️ No se pudieron refrescar los gráficos del Slides: {e}]")
+
+
+def generar_copia_presentacion_estadisticas(servicio_drive, id_plantilla, id_carpeta_destino, nombre_archivo):
+    """
+    Copia la presentación PLANTILLA de estadísticas (ID_PRESENTACION_STATS) a un archivo nuevo,
+    igual que generar_documento_informe hace con los informes individuales. Llamar DESPUÉS de
+    refrescar_graficos_slides sobre la plantilla, para que la copia salga con los gráficos ya
+    actualizados a los valores de esta corrida.
+
+    OJO: recién copiada, esta presentación TODAVÍA tiene los gráficos vinculados (linkingMode
+    LINKED) a la hoja 'Estadísticas del Día' — Drive copia el archivo tal cual, vínculos
+    incluidos. Llamar a desvincular_graficos_slides() sobre el ID que devuelve esta función (NO
+    sobre la plantilla) para dejarla como imagen fija y que quede realmente congelada.
+
+    Devuelve el ID de la presentación nueva, o None si falló.
+    """
+    try:
+        metadata_copia = {
+            'name': nombre_archivo,
+            'parents': [id_carpeta_destino]
+        }
+        copia = servicio_drive.files().copy(
+            fileId=id_plantilla,
+            body=metadata_copia,
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
+        id_copia = copia.get('id')
+        print(f"✅ Presentación de estadísticas de esta corrida: '{nombre_archivo}' (ID: {id_copia}).")
+        return id_copia
+    except Exception as e:
+        print(f"   [⚠️ No se pudo generar la copia de la presentación de estadísticas: {e}]")
+        return None
+
+
+def desvincular_graficos_slides(servicio_slides, id_presentacion):
+    """
+    Convierte TODOS los gráficos vinculados (sheetsChart) de una presentación en imágenes fijas
+    — el mismo efecto que el botón "Desvincular" del propio Slides, pero hecho por código.
+
+    IMPORTANTE: llamar esto SOLO sobre una COPIA (el ID que devuelve
+    generar_copia_presentacion_estadisticas), nunca sobre la plantilla (ID_PRESENTACION_STATS).
+    Si se desvincula la plantilla por error, deja de tener gráficos vinculados y las próximas
+    corridas no van a poder refrescar nada — refrescar_graficos_slides() ya no va a encontrar
+    ningún elemento con la propiedad 'sheetsChart' ahí adentro.
+
+    Cómo encuentra los gráficos de la copia: la API de Slides no tiene un request de
+    "desvincular" directo. Primero se lee la copia entera con presentations().get() y se
+    recorren sus slides buscando cualquier elemento con la propiedad 'sheetsChart' — mismo
+    mecanismo de búsqueda que usa refrescar_graficos_slides() sobre la plantilla, aplicado acá
+    sobre la copia. Por cada uno encontrado se arma un par de requests: deleteObject (borra el
+    vinculado) + createSheetsChart con linkingMode NOT_LINKED_IMAGE (lo reemplaza por una imagen
+    fija, en la misma página, tamaño y posición que tenía).
+    """
+    try:
+        presentacion = servicio_slides.presentations().get(presentationId=id_presentacion).execute()
+    except Exception as e:
+        print(f"   [⚠️ No se pudo leer la copia para desvincular sus gráficos: {e}]")
+        return
+
+    peticiones = []
+    for slide in presentacion.get('slides', []):
+        pagina_id = slide.get('objectId')
+        for elemento in slide.get('pageElements', []):
+            grafico_vinculado = elemento.get('sheetsChart')
+            if not grafico_vinculado:
+                continue  # no es un gráfico de Sheets, es otro tipo de elemento (texto, imagen, etc.)
+
+            peticiones.append({'deleteObject': {'objectId': elemento['objectId']}})
+            peticiones.append({
+                'createSheetsChart': {
+                    'spreadsheetId': grafico_vinculado['spreadsheetId'],
+                    'chartId': grafico_vinculado['chartId'],
+                    'linkingMode': 'NOT_LINKED_IMAGE',
+                    'elementProperties': {
+                        'pageObjectId': pagina_id,
+                        'size': elemento['size'],
+                        'transform': elemento['transform'],
+                    }
+                }
+            })
+
+    if not peticiones:
+        print("   [ℹ️ No se encontraron gráficos vinculados en la copia (¿ya estaba desvinculada?).]")
+        return
+
+    try:
+        servicio_slides.presentations().batchUpdate(
+            presentationId=id_presentacion, body={'requests': peticiones}
+        ).execute()
+        print(f"✅ Se desvincularon {len(peticiones) // 2} gráficos en la copia — quedó como imagen fija.")
+    except Exception as e:
+        print(f"   [⚠️ No se pudieron desvincular los gráficos de la copia: {e}]")
 
 # ==============================================================================
 # MÓDULO 4: GOOGLE DOCS (Generación de Informes a partir de Plantilla)
@@ -1148,11 +1270,17 @@ def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
 
 def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_carpeta_destino, datos_alumno, fecha_hoy):
     """
-    Genera el informe de un alumno copiando la plantilla de Google Docs y
-    reemplazando los placeholders {{...}} por la información analizada por la IA.
+    Genera el informe de un alumno copiando la plantilla de Google Docs, reemplazando los
+    placeholders {{...}} por la información analizada por la IA, y exportando el resultado a
+    PDF — el Doc editable intermedio se usa solo como paso interno y se borra al final; en
+    Drive queda únicamente el PDF (conversión de Google, sin costo de IA).
 
     servicio_docs se recibe ya armado (construir_servicio_docs(creds), una sola vez por corrida
     del pipeline) en vez de autenticarse de nuevo por cada alumno.
+
+    Devuelve el ID del archivo PDF final (o, si la exportación a PDF falla por algún motivo, el
+    ID del Doc editable como respaldo — se prefiere dejar ALGO generado antes que perder el
+    informe por completo).
     """
     apellido = datos_alumno.get('apellido_estudiante', '')
     nombre = datos_alumno.get('nombre_estudiante', 'Desconocido')
@@ -1211,11 +1339,78 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
         else:
             print(f"   ⚠️ El documento de {nombre} {apellido} se creó, pero no se pudo completar la información.")
 
-        print(f"✅ Documento guardado en Drive (ID: {doc_id}).")
+        # 5. Exportamos el Doc ya completado a PDF, lo subimos a la misma carpeta, y borramos
+        #    el Doc editable intermedio — en Drive solo queda el PDF final.
+        id_pdf = _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino)
+        if id_pdf:
+            print(f"✅ Informe guardado en Drive como PDF (ID: {id_pdf}).")
+            return id_pdf
+
+        print(f"   [⚠️ No se pudo exportar a PDF; queda el Doc editable como respaldo (ID: {doc_id}).]")
         return doc_id
 
     except Exception as e:
         print(f"Error al generar el informe de {nombre} {apellido}: {e}")
+        return None
+
+
+def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino):
+    """
+    Exporta un Google Doc ya completado a PDF (conversión de Google, sin costo de IA), sube ese
+    PDF a la misma carpeta, y borra el Doc editable intermedio. Devuelve el ID del PDF, o None
+    si algo falló — en ese caso el Doc original queda intacto (no se borra) para no perder el
+    informe.
+
+    Reintenta la descarga del export con backoff: el Doc se acaba de crear/editar (files().copy
+    + batchUpdate) y a veces la API de Drive tarda unos segundos en "verlo" desde export_media
+    — más notorio en Unidades Compartidas —, lo que devuelve un 404 "File not found" pasajero
+    aunque el archivo exista. Mismo patrón que ya usa el batchUpdate de los placeholders más
+    arriba.
+    """
+    intentos_maximos = 4
+    for intento in range(intentos_maximos):
+        try:
+            # a. Descargamos el PDF exportado a memoria (mismo patrón que la descarga de
+            #    perfiles en extraer_texto_drive_en_memoria, pero con export_media en vez de
+            #    get_media).
+            request = servicio_drive.files().export_media(fileId=doc_id, mimeType='application/pdf')
+            archivo_memoria = io.BytesIO()
+            downloader = MediaIoBaseDownload(archivo_memoria, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            archivo_memoria.seek(0)
+            break  # export salió bien, seguimos afuera del loop de reintentos
+        except Exception as e:
+            if intento < intentos_maximos - 1:
+                espera = 2 * (intento + 1)  # 2s, 4s, 6s...
+                print(f"   [⏳ Export a PDF: '{e}'. Reintento {intento + 1}/{intentos_maximos - 1} en {espera}s...]")
+                time.sleep(espera)
+            else:
+                print(f"   [⚠️ Falló la exportación a PDF tras {intentos_maximos} intentos: {e}]")
+                return None
+
+    try:
+        # b. Subimos ese PDF como un archivo nuevo en la misma carpeta.
+        metadata_pdf = {
+            'name': f"{nombre_documento}.pdf",
+            'parents': [id_carpeta_destino]
+        }
+        media = MediaIoBaseUpload(archivo_memoria, mimetype='application/pdf', resumable=False)
+        pdf_creado = servicio_drive.files().create(
+            body=metadata_pdf,
+            media_body=media,
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
+        id_pdf = pdf_creado.get('id')
+
+        # c. Recién ahora que el PDF quedó confirmado en Drive, borramos el Doc intermedio.
+        servicio_drive.files().delete(fileId=doc_id, supportsAllDrives=True).execute()
+
+        return id_pdf
+    except Exception as e:
+        print(f"   [⚠️ El PDF se exportó pero falló al subirlo/reemplazar el Doc: {e}]")
         return None
 
 
@@ -1356,6 +1551,7 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
 
     # PASO 3: Escribir en la hoja diaria y en el Histórico
     servicio_sheets = construir_servicio_sheets(creds)
+    id_presentacion_generada = None
     if servicio_sheets and resultados_finales:
         nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
         escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy)
@@ -1363,14 +1559,39 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
         actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy)
         servicio_slides = construir_servicio_slides(creds)
         if servicio_slides and ID_PRESENTACION_STATS:
-            refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS, OBJECT_IDS_GRAFICOS_STATS)
+            refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS)
+            if ID_CARPETA_PRESENTACIONES:
+                carpeta_presentaciones_hoy = obtener_o_crear_subcarpeta(
+                    servicio_drive, ID_CARPETA_PRESENTACIONES, fecha_iso
+                )
+                nombre_presentacion = f"Estadísticas_{hoy.strftime('%Y-%m-%d_%H%M')}"
+                id_presentacion_generada = generar_copia_presentacion_estadisticas(
+                    servicio_drive, ID_PRESENTACION_STATS, carpeta_presentaciones_hoy, nombre_presentacion
+                )
+                if id_presentacion_generada:
+                    # OJO: se desvincula la COPIA (id_presentacion_generada), NUNCA la plantilla
+                    # (ID_PRESENTACION_STATS) — la plantilla tiene que seguir vinculada para que
+                    # refrescar_graficos_slides() funcione en la próxima corrida.
+                    desvincular_graficos_slides(servicio_slides, id_presentacion_generada)
+            else:
+                print("   [ℹ️ ID_CARPETA_PRESENTACIONES no está configurada: se actualizó la plantilla "
+                      "en el lugar, sin generar una copia nueva para esta corrida.]")
 
     # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
     if ID_PLANTILLA_INFORME and resultados_finales:
         _avisar("\nIniciando fase de creación de reportes individuales...", len(resultados_finales), total_pdfs)
         servicio_docs = construir_servicio_docs(creds)
+
+        # Informes generados / Mezclado|Cohorte / fecha / carrera / archivo — separado en dos
+        # ramas según el modo de la corrida, para que una cohorte completa de una carrera no se
+        # mezcle en la misma carpeta con corridas de conjunto mixto que puedan tocar esa misma
+        # fecha y carrera por coincidencia.
+        nombre_rama_modo = "Cohorte" if carrera_cohorte else "Mezclado"
+        carpeta_modo = obtener_o_crear_subcarpeta(
+            servicio_drive, ID_CARPETA_INFORMES, nombre_rama_modo
+        )
         carpeta_informes_hoy = obtener_o_crear_subcarpeta(
-            servicio_drive, ID_CARPETA_INFORMES, fecha_iso
+            servicio_drive, carpeta_modo, fecha_iso
         )
         carpetas_carrera_hoy = {}  # cache: nombre de carpeta -> id, para no repetir la búsqueda
         for resultado in resultados_finales:
@@ -1390,14 +1611,19 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
 
     _avisar("🎉 PIPELINE FINALIZADO.", total_pdfs, total_pdfs)
 
-    return construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso)
+    return construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso, id_presentacion_generada)
 
 
-def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso):
+def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso, id_presentacion_generada=None):
     """
     Arma el diccionario resumen final del pipeline: conteos por semáforo, por carrera, alumnos
     fallidos/exitosos y links directos a Sheets/Slides, pensado para mostrarse tal cual en el
     dashboard web al terminar una corrida.
+
+    id_presentacion_generada: ID de la copia de la presentación de estadísticas generada PARA
+    ESTA CORRIDA (ver generar_copia_presentacion_estadisticas), si se pudo crear. Si es None
+    (ID_CARPETA_PRESENTACIONES no configurada, o falló la copia), el link cae de vuelta a la
+    plantilla — sigue siendo útil, solo que esa vista sí se pisa entre corridas.
     """
     conteo_semaforo = {"Verde": 0, "Amarillo": 0, "Rojo": 0}
     conteo_por_carrera = {}
@@ -1424,7 +1650,9 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
         links["planilla"] = f"https://docs.google.com/spreadsheets/d/{ID_SPREADSHEET}/edit"
     if ID_CARPETA_INFORMES:
         links["carpeta_informes"] = f"https://drive.google.com/drive/folders/{ID_CARPETA_INFORMES}"
-    if ID_PRESENTACION_STATS:
+    if id_presentacion_generada:
+        links["presentacion_estadisticas"] = f"https://docs.google.com/presentation/d/{id_presentacion_generada}/edit"
+    elif ID_PRESENTACION_STATS:
         links["presentacion_estadisticas"] = f"https://docs.google.com/presentation/d/{ID_PRESENTACION_STATS}/edit"
 
     return {
