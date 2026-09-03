@@ -1357,9 +1357,14 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
 def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino):
     """
     Exporta un Google Doc ya completado a PDF (conversión de Google, sin costo de IA), sube ese
-    PDF a la misma carpeta, y borra el Doc editable intermedio. Devuelve el ID del PDF, o None
-    si algo falló — en ese caso el Doc original queda intacto (no se borra) para no perder el
-    informe.
+    PDF a la misma carpeta, y borra el Doc editable intermedio.
+
+    Las 3 etapas (exportar, subir, borrar) están separadas en try/except independientes a
+    propósito: si falla exportar o subir, no hay PDF real todavía, así que se devuelve None y el
+    Doc original queda como respaldo. Pero si falla el BORRADO del Doc viejo (después de que el
+    PDF ya se subió con éxito), eso NO es una falla real del resultado — el PDF ya existe en
+    Drive — así que se devuelve igual el ID del PDF, solo con un aviso de que quedó un Doc
+    sobrante sin borrar.
 
     Reintenta la descarga del export con backoff: el Doc se acaba de crear/editar (files().copy
     + batchUpdate) y a veces la API de Drive tarda unos segundos en "verlo" desde export_media
@@ -1404,14 +1409,26 @@ def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, i
             supportsAllDrives=True
         ).execute()
         id_pdf = pdf_creado.get('id')
-
-        # c. Recién ahora que el PDF quedó confirmado en Drive, borramos el Doc intermedio.
-        servicio_drive.files().delete(fileId=doc_id, supportsAllDrives=True).execute()
-
-        return id_pdf
     except Exception as e:
-        print(f"   [⚠️ El PDF se exportó pero falló al subirlo/reemplazar el Doc: {e}]")
+        # Acá sí es una falla real: no llegamos a tener el PDF. El Doc original queda intacto
+        # como respaldo (no se intentó borrar todavía).
+        print(f"   [⚠️ El PDF se exportó pero falló al subirlo a Drive: {e}]")
         return None
+
+    # c. Recién ahora que el PDF quedó CONFIRMADO en Drive, borramos el Doc intermedio — en un
+    # try/except SEPARADO a propósito. Si esto falla (mismo tipo de demora de "recién creado"
+    # que ya vimos en el export), el PDF real ya existe y ya es un ÉXITO: no hay que reportarlo
+    # como si todo el proceso hubiera fallado, ni devolver None (eso escondería el PDF bueno
+    # detrás de un mensaje de error y el caller pensaría que hay que usar el Doc viejo como
+    # respaldo). Lo único que queda pendiente es un Doc editable sin borrar en Drive — molesto,
+    # pero no es pérdida de información.
+    try:
+        servicio_drive.files().delete(fileId=doc_id, supportsAllDrives=True).execute()
+    except Exception as e:
+        print(f"   [ℹ️ El PDF se generó bien, pero no se pudo borrar el Doc intermedio "
+              f"(ID: {doc_id}) — quedó como archivo sobrante en Drive, se puede borrar a mano: {e}]")
+
+    return id_pdf
 
 
 # ==============================================================================
