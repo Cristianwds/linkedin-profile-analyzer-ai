@@ -249,16 +249,53 @@
     gap:14px;
     padding:12px 0;
     border-bottom:1px solid #edf0f7;
+    flex-wrap:wrap;
   }
   .fila-carrera:last-child{border-bottom:none;}
-  .fila-carrera .info{flex:1;}
+  .fila-carrera .info{flex:1; min-width:180px;}
   .fila-carrera .nombre{font-weight:600; font-size:.92rem;}
   .fila-carrera .kw{color:var(--texto-tenue); font-size:.8rem; margin-top:2px;}
   .plan-badge{font-size:.78rem; font-weight:600; padding:3px 10px; border-radius:99px;}
   .plan-badge.si{background:var(--verde-bg); color:var(--verde);}
   .plan-badge.no{background:var(--amarillo-bg); color:var(--amarillo);}
+  .nivel-badge{font-size:.75rem; font-weight:600; padding:3px 10px; border-radius:99px; white-space:nowrap;}
+  .nivel-badge.grado{background:#eef2ff; color:var(--azul-claro);}
+  .nivel-badge.posgrado{background:#f3e8ff; color:#7c3aed;}
 
-  .form-nueva-carrera{display:grid; grid-template-columns:1fr 1fr auto; gap:12px; align-items:end; margin-top:18px;}
+  .form-nueva-carrera{display:grid; grid-template-columns:1fr 1fr auto auto; gap:12px; align-items:end; margin-top:18px;}
+
+  .filtro-nivel{display:flex; gap:8px; margin-bottom:16px;}
+  .filtro-nivel button{
+    all:unset;
+    cursor:pointer;
+    padding:6px 14px;
+    border-radius:99px;
+    font-size:.85rem;
+    font-weight:600;
+    border:1px solid var(--borde);
+    color:var(--texto-tenue);
+  }
+  .filtro-nivel button.activo{background:var(--azul); color:#fff; border-color:var(--azul);}
+
+  .editor-plan{
+    width:100%;
+    margin-top:10px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    flex-basis:100%;
+  }
+  .editor-plan textarea{
+    width:100%;
+    min-height:220px;
+    font-family:ui-monospace,'SF Mono',Consolas,monospace;
+    font-size:.82rem;
+    padding:12px;
+    border:1px solid var(--borde);
+    border-radius:8px;
+    resize:vertical;
+  }
+  .editor-plan .acciones{display:flex; gap:10px;}
 
   .oculto{display:none !important;}
   .mensaje-error{background:var(--rojo-bg); color:var(--rojo); padding:10px 14px; border-radius:8px; font-size:.85rem; margin-bottom:14px;}
@@ -420,11 +457,18 @@
     <!-- ======================= TAB: CARRERAS ======================= -->
     <section id="tab-carreras" class="oculto">
       <h1>Carreras y planes de estudio</h1>
-      <p class="lead">Cada carrera necesita palabras clave (para detectarla en el PDF del perfil) y, opcionalmente, el PDF del plan de estudios oficial — se usa como contexto extra para que la IA sugiera aptitudes y evalúe la coherencia del perfil con la carrera.</p>
+      <p class="lead">Cada carrera necesita palabras clave (para detectarla en el PDF del perfil) y, opcionalmente, el plan de estudios oficial — se usa como contexto extra para que la IA sugiera aptitudes y evalúe la coherencia del perfil con la carrera.</p>
 
       <div class="panel">
         <h2>Carreras configuradas</h2>
         <p class="desc">El plan de estudios es opcional: sin él, el perfil se analiza igual, solo que sin ese contexto adicional.</p>
+
+        <div class="filtro-nivel" id="filtro-nivel-carreras">
+          <button data-nivel="todas" class="activo">Todas</button>
+          <button data-nivel="grado">Grado</button>
+          <button data-nivel="posgrado">Posgrado</button>
+        </div>
+
         <div id="lista-carreras"></div>
 
         <div class="form-nueva-carrera">
@@ -435,6 +479,13 @@
           <div>
             <label for="input-keywords-carrera">Palabras clave (separadas por coma)</label>
             <input type="text" id="input-keywords-carrera" placeholder="Ej: licenciatura en matemática, matemática">
+          </div>
+          <div>
+            <label for="select-nivel-carrera">Nivel</label>
+            <select id="select-nivel-carrera">
+              <option value="grado">Grado</option>
+              <option value="posgrado">Posgrado</option>
+            </select>
           </div>
           <button class="primario" id="btn-agregar-carrera">Agregar carrera</button>
         </div>
@@ -539,7 +590,15 @@ async function poblarSelectCarreras(){
   try{
     const r = await apiFetch(`${API}/api/carreras`);
     const carreras = await r.json();
-    select.innerHTML = carreras.map(c => `<option value="${c.nombre}">${c.nombre}${c.tiene_plan ? '' : ' (sin plan cargado)'}</option>`).join('');
+
+    const opcion = c => `<option value="${c.nombre}">${c.nombre}${c.tiene_plan ? '' : ' (sin plan cargado)'}</option>`;
+    const grado = carreras.filter(c => c.nivel !== 'posgrado');
+    const posgrado = carreras.filter(c => c.nivel === 'posgrado');
+
+    let html = '';
+    if (grado.length) html += `<optgroup label="Grado">${grado.map(opcion).join('')}</optgroup>`;
+    if (posgrado.length) html += `<optgroup label="Posgrado">${posgrado.map(opcion).join('')}</optgroup>`;
+    select.innerHTML = html || '<option value="">No hay carreras configuradas</option>';
   }catch(e){
     select.innerHTML = `<option value="">No se pudieron cargar las carreras</option>`;
   }
@@ -644,11 +703,31 @@ document.getElementById('btn-nueva-corrida').addEventListener('click', () => {
 });
 
 /* ---------------- gestión de carreras y planes ---------------- */
+let nivelFiltroActual = 'todas';
+let carrerasCache = [];
+
+document.querySelectorAll('#filtro-nivel-carreras button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#filtro-nivel-carreras button').forEach(b => b.classList.remove('activo'));
+    btn.classList.add('activo');
+    nivelFiltroActual = btn.dataset.nivel;
+    renderizarListaCarreras();
+  });
+});
+
 async function cargarCarreras(){
   const cont = document.getElementById('lista-carreras');
   cont.innerHTML = '<p class="desc">Cargando…</p>';
   const r = await apiFetch(`${API}/api/carreras`);
-  const carreras = await r.json();
+  carrerasCache = await r.json();
+  renderizarListaCarreras();
+}
+
+function renderizarListaCarreras(){
+  const cont = document.getElementById('lista-carreras');
+  const carreras = nivelFiltroActual === 'todas'
+    ? carrerasCache
+    : carrerasCache.filter(c => (c.nivel || 'grado') === nivelFiltroActual);
 
   cont.innerHTML = carreras.map(c => `
     <div class="fila-carrera" data-carrera="${c.nombre}">
@@ -656,12 +735,15 @@ async function cargarCarreras(){
         <div class="nombre">${c.nombre}</div>
         <div class="kw">${c.palabras_clave.join(', ')}</div>
       </div>
+      <span class="nivel-badge ${c.nivel || 'grado'}">${c.nivel === 'posgrado' ? 'Posgrado' : 'Grado'}</span>
       <span class="plan-badge ${c.tiene_plan ? 'si' : 'no'}">${c.tiene_plan ? 'Plan cargado' : 'Sin plan'}</span>
       <input type="file" accept="application/pdf" class="input-plan" style="max-width:150px;">
       <button class="secundario btn-subir-plan">${c.tiene_plan ? 'Reemplazar' : 'Subir plan'}</button>
+      <button class="secundario btn-ver-plan" ${c.tiene_plan ? '' : 'disabled'}>Ver / editar</button>
       <button class="peligro btn-borrar-carrera">Eliminar</button>
+      <div class="editor-plan oculto"></div>
     </div>
-  `).join('') || '<p class="desc">Todavía no hay carreras configuradas.</p>';
+  `).join('') || '<p class="desc">No hay carreras en este filtro.</p>';
 
   cont.querySelectorAll('.fila-carrera').forEach(fila => {
     const nombre = fila.dataset.carrera;
@@ -682,7 +764,7 @@ async function cargarCarreras(){
 
         const msg = document.getElementById('mensaje-carreras');
         if (d.requiere_revision_manual){
-          msg.innerHTML = `<div class="mensaje-error">Plan de '${nombre}' guardado, pero con el método '${d.metodo_usado}' — convendría revisarlo a mano en planes_de_estudio/${d.archivo_guardado} antes de confiar en él del todo.</div>`;
+          msg.innerHTML = `<div class="mensaje-error">Plan de '${nombre}' guardado, pero con el método '${d.metodo_usado}' — convendría revisarlo con "Ver / editar" antes de confiar en él del todo.</div>`;
         } else {
           msg.innerHTML = `<div class="mensaje-ok">Plan de '${nombre}' guardado correctamente (método: ${d.metodo_usado}, ${d.caracteres} caracteres).</div>`;
         }
@@ -693,8 +775,65 @@ async function cargarCarreras(){
       }
     });
 
+    fila.querySelector('.btn-ver-plan').addEventListener('click', async () => {
+      const editor = fila.querySelector('.editor-plan');
+
+      // Si ya está abierto, un segundo click lo cierra (sin guardar).
+      if (!editor.classList.contains('oculto')){
+        editor.classList.add('oculto');
+        editor.innerHTML = '';
+        return;
+      }
+
+      editor.classList.remove('oculto');
+      editor.innerHTML = '<p class="desc">Cargando el plan…</p>';
+
+      try{
+        const r = await apiFetch(`${API}/api/carreras/${encodeURIComponent(nombre)}/plan`);
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'No se pudo cargar el plan.');
+
+        editor.innerHTML = `
+          <textarea>${d.texto}</textarea>
+          <div class="acciones">
+            <button class="primario btn-guardar-plan">Guardar cambios</button>
+            <button class="secundario btn-cancelar-plan">Cancelar</button>
+          </div>
+        `;
+
+        editor.querySelector('.btn-cancelar-plan').addEventListener('click', () => {
+          editor.classList.add('oculto');
+          editor.innerHTML = '';
+        });
+
+        editor.querySelector('.btn-guardar-plan').addEventListener('click', async () => {
+          const textoNuevo = editor.querySelector('textarea').value;
+          const btnGuardar = editor.querySelector('.btn-guardar-plan');
+          btnGuardar.textContent = 'Guardando…';
+          try{
+            const r2 = await apiFetch(`${API}/api/carreras/${encodeURIComponent(nombre)}/plan`, {
+              method: 'PUT',
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({texto: textoNuevo})
+            });
+            const d2 = await r2.json();
+            if (!r2.ok) throw new Error(d2.detail || 'No se pudo guardar.');
+            document.getElementById('mensaje-carreras').innerHTML =
+              `<div class="mensaje-ok">Plan de '${nombre}' actualizado (${d2.caracteres} caracteres).</div>`;
+            editor.classList.add('oculto');
+            editor.innerHTML = '';
+          }catch(e){
+            btnGuardar.textContent = 'Guardar cambios';
+            alert('Error al guardar: ' + e.message);
+          }
+        });
+      }catch(e){
+        editor.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+      }
+    });
+
     fila.querySelector('.btn-borrar-carrera').addEventListener('click', async () => {
-      if (!confirm(`¿Eliminar la carrera '${nombre}'? Esto no borra el PDF del plan de estudios, solo la deja de detectar en los perfiles.`)) return;
+      if (!confirm(`¿Eliminar la carrera '${nombre}'? Esto no borra el plan de estudios del disco, solo la deja de detectar en los perfiles.`)) return;
       await apiFetch(`${API}/api/carreras/${encodeURIComponent(nombre)}`, {method:'DELETE'});
       cargarCarreras();
     });
@@ -704,6 +843,7 @@ async function cargarCarreras(){
 document.getElementById('btn-agregar-carrera').addEventListener('click', async () => {
   const nombre = document.getElementById('input-nombre-carrera').value.trim();
   const keywords = document.getElementById('input-keywords-carrera').value.split(',').map(k => k.trim()).filter(Boolean);
+  const nivel = document.getElementById('select-nivel-carrera').value;
   const msg = document.getElementById('mensaje-carreras');
 
   if (!nombre || keywords.length === 0){
@@ -715,12 +855,12 @@ document.getElementById('btn-agregar-carrera').addEventListener('click', async (
     const r = await apiFetch(`${API}/api/carreras`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({nombre, palabras_clave: keywords})
+      body: JSON.stringify({nombre, palabras_clave: keywords, nivel})
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'No se pudo guardar la carrera.');
 
-    msg.innerHTML = `<div class="mensaje-ok">Carrera '${nombre}' guardada. Ahora podés subirle el PDF del plan de estudios.</div>`;
+    msg.innerHTML = `<div class="mensaje-ok">Carrera '${nombre}' guardada como ${nivel === 'posgrado' ? 'posgrado' : 'grado'}. Ahora podés subirle el PDF del plan de estudios.</div>`;
     document.getElementById('input-nombre-carrera').value = '';
     document.getElementById('input-keywords-carrera').value = '';
     cargarCarreras();

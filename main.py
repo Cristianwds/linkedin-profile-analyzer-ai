@@ -6,6 +6,7 @@ import re
 import time
 import hashlib
 import unicodedata
+import almacenamiento_estado
 
 from datetime import date
 
@@ -19,7 +20,13 @@ from openai import OpenAI
 from groq import Groq
 
 # Activacion del venv antes de ejecutar: venv\Scripts\activate
-# ejecucion del codigo: python main.py
+
+# ejecucion del codigo en bash: python main.py
+
+# ejecucion para pagina web: uvicorn web_app:app --reload --port 8080
+# Abrir http://localhost:8080
+
+# Pagina web: https://linkedin-profile-analyzer-849635297315.southamerica-east1.run.app
 
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
@@ -448,19 +455,12 @@ ARCHIVO_CACHE = "cache_analisis.json"
 
 
 def cargar_cache():
-    if os.path.exists(ARCHIVO_CACHE):
-        try:
-            with open(ARCHIVO_CACHE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    return almacenamiento_estado.leer_json(ARCHIVO_CACHE, {})
 
 
 def guardar_cache(cache):
     try:
-        with open(ARCHIVO_CACHE, 'w', encoding='utf-8') as f:
-            json.dump(cache, f, ensure_ascii=False, indent=2)
+        almacenamiento_estado.escribir_json(ARCHIVO_CACHE, cache)
     except Exception as e:
         print(f"   [⚠️ No se pudo guardar la caché: {e}]")
 
@@ -487,38 +487,86 @@ CACHE_ANALISIS = cargar_cache()
 CARPETA_PLANES_DE_ESTUDIO = "planes_de_estudio"
 
 # Mapa de carreras de UdeSA: nombre canónico -> palabras clave para detectarla en el texto crudo
-# del PDF (sin usar IA) + nombre del archivo con su plan de estudios.
+# del PDF (sin usar IA) + nombre del archivo con su plan de estudios + nivel (grado/posgrado).
 #
-# NOTA: este diccionario YA NO se hardcodea acá. Vive en 'carreras.json' (mismo nivel que este
-# archivo) para que se pueda agregar/editar/borrar carreras desde la web sin tocar código ni
-# redeployar. Si el archivo no existe todavía (primera vez), se crea vacío. Usá
-# agregar_o_actualizar_carrera() / eliminar_carrera() en vez de mutar CARRERAS_UDESA a mano,
-# así queda todo persistido en el JSON.
-ARCHIVO_CARRERAS = "carreras.json"
+# NOTA: este diccionario YA NO se hardcodea acá. Se guarda en DOS archivos separados por nivel
+# (carreras_grado.json y carreras_posgrado.json, mismo nivel que este archivo) para que se
+# puedan filtrar/agrupar por nivel en la web sin tener que inferirlo de ningún otro dato. En
+# memoria, CARRERAS_UDESA sigue siendo UN SOLO diccionario combinado (con 'nivel' como campo más
+# de cada entrada) para no tener que tocar el resto del pipeline (detección de carrera, modo
+# cohorte, etc.) — la separación en dos archivos es solo un detalle de PERSISTENCIA. Usá
+# agregar_o_actualizar_carrera() / eliminar_carrera() en vez de mutar CARRERAS_UDESA a mano.
+ARCHIVO_CARRERAS_POR_NIVEL = {
+    "grado": "carreras_grado.json",
+    "posgrado": "carreras_posgrado.json",
+}
+ARCHIVO_CARRERAS_LEGACY = "carreras.json"  # el archivo único de antes de separar por nivel
+
+
+def _migrar_carreras_legacy_si_hace_falta():
+    """
+    Si todavía no existen los archivos separados por nivel pero sí existe el carreras.json de
+    antes de esta funcionalidad, migra TODO su contenido a carreras_grado.json (a la fecha de
+    este cambio, las carreras ya cargadas eran todas de grado) y crea un carreras_posgrado.json
+    vacío. Corre una sola vez — una vez migrado, carreras.json deja de leerse (se puede borrar a
+    mano, o dejarlo de recuerdo, no molesta).
+    """
+    ya_migrado = any(almacenamiento_estado.existe(a) for a in ARCHIVO_CARRERAS_POR_NIVEL.values())
+    if ya_migrado or not almacenamiento_estado.existe(ARCHIVO_CARRERAS_LEGACY):
+        return
+
+    carreras_viejas = almacenamiento_estado.leer_json(ARCHIVO_CARRERAS_LEGACY, None)
+    if carreras_viejas is None:
+        print(f"   [⚠️ No se pudo migrar '{ARCHIVO_CARRERAS_LEGACY}'.]")
+        return
+
+    almacenamiento_estado.escribir_json(ARCHIVO_CARRERAS_POR_NIVEL["grado"], carreras_viejas)
+    almacenamiento_estado.escribir_json(ARCHIVO_CARRERAS_POR_NIVEL["posgrado"], {})
+
+    print(f"   [ℹ️ Migración automática: se movieron {len(carreras_viejas)} carreras de "
+          f"'{ARCHIVO_CARRERAS_LEGACY}' a '{ARCHIVO_CARRERAS_POR_NIVEL['grado']}' (todas como "
+          f"'grado' por default). Si alguna en realidad es de posgrado, editala desde la web.]")
 
 
 def cargar_carreras():
-    if os.path.exists(ARCHIVO_CARRERAS):
-        try:
-            with open(ARCHIVO_CARRERAS, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"   [⚠️ No se pudo leer '{ARCHIVO_CARRERAS}', se usa configuración vacía: {e}]")
-    return {}
+    """Lee carreras_grado.json y carreras_posgrado.json y los combina en un solo diccionario en
+    memoria, agregándole 'nivel' a cada entrada según de qué archivo salió."""
+    _migrar_carreras_legacy_si_hace_falta()
+
+    combinado = {}
+    for nivel, archivo in ARCHIVO_CARRERAS_POR_NIVEL.items():
+        datos = almacenamiento_estado.leer_json(archivo, None)
+        if datos is None:
+            continue
+        for nombre, info in datos.items():
+            info = dict(info)
+            info['nivel'] = nivel
+            combinado[nombre] = info
+    return combinado
 
 
 def guardar_carreras(carreras):
-    with open(ARCHIVO_CARRERAS, 'w', encoding='utf-8') as f:
-        json.dump(carreras, f, ensure_ascii=False, indent=2)
+    """Separa el diccionario combinado por 'nivel' y escribe cada mitad en su archivo
+    correspondiente (carreras_grado.json / carreras_posgrado.json). El campo 'nivel' no se
+    persiste DENTRO de cada archivo (es redundante, ya lo dice el nombre del archivo) — se
+    vuelve a agregar al leer, en cargar_carreras()."""
+    por_nivel = {nivel: {} for nivel in ARCHIVO_CARRERAS_POR_NIVEL}
+    for nombre, info in carreras.items():
+        nivel = info.get('nivel') if info.get('nivel') in ARCHIVO_CARRERAS_POR_NIVEL else 'grado'
+        info_sin_nivel = {k: v for k, v in info.items() if k != 'nivel'}
+        por_nivel[nivel][nombre] = info_sin_nivel
+
+    for nivel, archivo in ARCHIVO_CARRERAS_POR_NIVEL.items():
+        almacenamiento_estado.escribir_json(archivo, por_nivel[nivel])
 
 
 CARRERAS_UDESA = cargar_carreras()
 
 
 def recargar_carreras():
-    """Vuelve a leer carreras.json del disco y actualiza CARRERAS_UDESA in-place (mismo dict,
-    mismas referencias) para que el resto de las funciones que ya lo tienen importado vean el
-    cambio sin reiniciar el proceso."""
+    """Vuelve a leer los archivos de carreras del disco y actualiza CARRERAS_UDESA in-place
+    (mismo dict, mismas referencias) para que el resto de las funciones que ya lo tienen
+    importado vean el cambio sin reiniciar el proceso."""
     CARRERAS_UDESA.clear()
     CARRERAS_UDESA.update(cargar_carreras())
     return CARRERAS_UDESA
@@ -533,10 +581,11 @@ def _slug_archivo_plan(nombre_carrera):
     return f"{base}.txt"
 
 
-def agregar_o_actualizar_carrera(nombre_carrera, palabras_clave, archivo_plan=None):
-    """Crea o actualiza una entrada de CARRERAS_UDESA y persiste en carreras.json.
-    Si la carrera ya existía y no se pasa archivo_plan, conserva el que tenía (para no romper
-    el link a un plan ya cargado al editar solo las palabras clave)."""
+def agregar_o_actualizar_carrera(nombre_carrera, palabras_clave, nivel=None, archivo_plan=None):
+    """Crea o actualiza una entrada de CARRERAS_UDESA y persiste en el archivo del nivel
+    correspondiente. Si la carrera ya existía y no se pasa nivel/archivo_plan, conserva los que
+    tenía (para no romper el link a un plan ya cargado, o cambiarle el nivel sin querer, al
+    editar solo las palabras clave)."""
     nombre_carrera = nombre_carrera.strip()
     if not nombre_carrera:
         raise ValueError("El nombre de la carrera no puede estar vacío.")
@@ -546,27 +595,42 @@ def agregar_o_actualizar_carrera(nombre_carrera, palabras_clave, archivo_plan=No
         raise ValueError("Hace falta al menos una palabra clave para detectar la carrera.")
 
     existente = CARRERAS_UDESA.get(nombre_carrera, {})
+    nivel_final = nivel or existente.get("nivel")
+    if nivel_final not in ARCHIVO_CARRERAS_POR_NIVEL:
+        raise ValueError("El nivel tiene que ser 'grado' o 'posgrado'.")
+
     CARRERAS_UDESA[nombre_carrera] = {
         "palabras_clave": palabras_clave,
         "archivo_plan": archivo_plan or existente.get("archivo_plan") or _slug_archivo_plan(nombre_carrera),
+        "nivel": nivel_final,
     }
     guardar_carreras(CARRERAS_UDESA)
     return CARRERAS_UDESA[nombre_carrera]
 
 
 def eliminar_carrera(nombre_carrera, borrar_archivo_plan=False):
-    """Saca la carrera de CARRERAS_UDESA y persiste. Por defecto NO borra el .txt del plan del
-    disco (podría estar linkeado desde otro lado o quererse reusar); pasá borrar_archivo_plan=True
-    para borrarlo también."""
+    """Saca la carrera de CARRERAS_UDESA y persiste (en el archivo de su nivel). Por defecto NO
+    borra el .txt del plan del disco (podría estar linkeado desde otro lado o quererse reusar);
+    pasá borrar_archivo_plan=True para borrarlo también."""
     datos = CARRERAS_UDESA.pop(nombre_carrera, None)
     if datos is None:
         return False
     guardar_carreras(CARRERAS_UDESA)
-    if borrar_archivo_plan:
-        ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, datos.get("archivo_plan", ""))
-        if datos.get("archivo_plan") and os.path.exists(ruta):
-            os.remove(ruta)
+    if borrar_archivo_plan and datos.get("archivo_plan"):
+        ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, datos["archivo_plan"])
+        almacenamiento_estado.borrar(ruta)
     return True
+
+
+def guardar_texto_plan_de_estudios(nombre_carrera, texto):
+    """Sobrescribe directo el .txt del plan de estudios de una carrera con el texto que se le
+    pase — usado por el editor de planes de la web (ver/editar sin necesidad de resubir el PDF).
+    Lanza ValueError si la carrera no existe."""
+    if nombre_carrera not in CARRERAS_UDESA:
+        raise ValueError(f"No existe la carrera '{nombre_carrera}'.")
+    ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, CARRERAS_UDESA[nombre_carrera]["archivo_plan"])
+    almacenamiento_estado.escribir_texto(ruta, texto)
+    return len(texto)
 
 
 def _normalizar_texto(texto):
@@ -610,12 +674,8 @@ def cargar_plan_de_estudios(nombre_carrera):
         return None
 
     ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, CARRERAS_UDESA[nombre_carrera]["archivo_plan"])
-    if not os.path.exists(ruta):
-        return None
-
     try:
-        with open(ruta, 'r', encoding='utf-8') as f:
-            return f.read()
+        return almacenamiento_estado.leer_texto(ruta)
     except Exception as e:
         print(f"   [⚠️ No se pudo leer el plan de estudios de '{nombre_carrera}': {e}]")
         return None

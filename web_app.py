@@ -37,6 +37,7 @@ Correr en local:
 Luego abrir http://localhost:8080
 """
 
+import json
 import os
 import re
 import secrets
@@ -58,6 +59,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import main as pipeline
 import extraccion_plan_estudios as extractor
+import almacenamiento_estado
 
 app = FastAPI(title="UdeSA · Análisis de Perfiles de LinkedIn")
 
@@ -71,6 +73,9 @@ app.add_middleware(
 # Firma las cookies de sesión (guardan solo el email de la persona logueada, nada más sensible).
 # Sin SESSION_SECRET fijo en producción, cada reinicio del proceso desloguea a todo el mundo.
 SESSION_SECRET = os.getenv("SESSION_SECRET") or secrets.token_hex(32)
+if not os.getenv("SESSION_SECRET"):
+    print("   [⚠️ SESSION_SECRET no está seteada: se genera una al azar y las sesiones activas "
+          "se invalidan en cada reinicio del contenedor. Definila fija en Cloud Run para prod.]")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
 
 CLIENT_SECRETS_FILE = os.getenv("GOOGLE_OAUTH_CLIENT_SECRETS_FILE", "client_secret_web.json")
@@ -89,20 +94,18 @@ def _archivo_token_usuario(email):
 
 
 def guardar_credenciales_usuario(email, creds):
-    os.makedirs(CARPETA_TOKENS, exist_ok=True)
-    with open(_archivo_token_usuario(email), 'w') as f:
-        f.write(creds.to_json())
+    almacenamiento_estado.escribir_texto(_archivo_token_usuario(email), creds.to_json())
 
 
 def cargar_credenciales_usuario(email):
-    """Lee el token de esa persona del disco, y lo refresca si hace falta (guardando el nuevo
-    access token). Devuelve None si no hay token guardado o si no se pudo refrescar (en ese caso
-    hay que volver a loguearse)."""
-    ruta = _archivo_token_usuario(email)
-    if not os.path.exists(ruta):
+    """Lee el token de esa persona (disco o bucket, según almacenamiento_estado), y lo refresca
+    si hace falta (guardando el nuevo access token). Devuelve None si no hay token guardado o si
+    no se pudo refrescar (en ese caso hay que volver a loguearse)."""
+    contenido = almacenamiento_estado.leer_texto(_archivo_token_usuario(email))
+    if contenido is None:
         return None
 
-    creds = Credentials.from_authorized_user_file(ruta, pipeline.SCOPES)
+    creds = Credentials.from_authorized_user_info(json.loads(contenido), pipeline.SCOPES)
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(GoogleAuthRequest())
@@ -323,6 +326,11 @@ def estado_pipeline(run_id: str, _creds: Credentials = Depends(usuario_actual)):
 class CarreraBody(BaseModel):
     nombre: str
     palabras_clave: List[str]
+    nivel: str  # "grado" | "posgrado"
+
+
+class PlanTextoBody(BaseModel):
+    texto: str
 
 
 @app.get("/api/carreras")
@@ -335,7 +343,8 @@ def listar_carreras(_creds: Credentials = Depends(usuario_actual)):
             "nombre": nombre,
             "palabras_clave": datos.get("palabras_clave", []),
             "archivo_plan": datos.get("archivo_plan"),
-            "tiene_plan": os.path.exists(ruta_plan),
+            "nivel": datos.get("nivel", "grado"),
+            "tiene_plan": almacenamiento_estado.existe(ruta_plan),
         })
     resultado.sort(key=lambda c: c["nombre"])
     return resultado
@@ -343,8 +352,10 @@ def listar_carreras(_creds: Credentials = Depends(usuario_actual)):
 
 @app.post("/api/carreras")
 def crear_o_actualizar_carrera(body: CarreraBody, _creds: Credentials = Depends(usuario_actual)):
+    if body.nivel not in ("grado", "posgrado"):
+        raise HTTPException(400, "El nivel tiene que ser 'grado' o 'posgrado'.")
     try:
-        datos = pipeline.agregar_o_actualizar_carrera(body.nombre, body.palabras_clave)
+        datos = pipeline.agregar_o_actualizar_carrera(body.nombre, body.palabras_clave, nivel=body.nivel)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"nombre": body.nombre.strip(), **datos}
@@ -387,10 +398,8 @@ async def subir_plan_de_estudios(nombre: str, archivo: UploadFile = File(...), _
         os.remove(ruta_temporal)
 
     nombre_archivo_txt = pipeline.CARRERAS_UDESA[nombre]["archivo_plan"]
-    os.makedirs(pipeline.CARPETA_PLANES_DE_ESTUDIO, exist_ok=True)
     ruta_destino = os.path.join(pipeline.CARPETA_PLANES_DE_ESTUDIO, nombre_archivo_txt)
-    with open(ruta_destino, "w", encoding="utf-8") as f:
-        f.write(texto_final)
+    almacenamiento_estado.escribir_texto(ruta_destino, texto_final)
 
     return {
         "nombre_carrera": nombre,
@@ -411,6 +420,20 @@ def ver_plan_de_estudios(nombre: str, _creds: Credentials = Depends(usuario_actu
     if texto is None:
         raise HTTPException(404, "Esta carrera todavía no tiene un plan de estudios cargado.")
     return {"nombre_carrera": nombre, "texto": texto}
+
+
+@app.put("/api/carreras/{nombre}/plan")
+def editar_plan_de_estudios(nombre: str, body: PlanTextoBody, _creds: Credentials = Depends(usuario_actual)):
+    """
+    Sobrescribe directo el texto del plan de estudios de una carrera, sin pasar por el PDF —
+    para cuando alguien quiere corregir a mano algo que la extracción automática no reconstruyó
+    bien, o directamente escribir/actualizar el plan sin tener el PDF a mano.
+    """
+    try:
+        caracteres = pipeline.guardar_texto_plan_de_estudios(nombre, body.texto)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"nombre_carrera": nombre, "caracteres": caracteres}
 
 
 # ==============================================================================
