@@ -1,0 +1,18 @@
+[
+  {
+    "pdf_original": "plan-de-estudios-EMBA.pdf",
+    "archivo_txt": "plan_de_estudios_emba.txt",
+    "nombre_sugerido": "Plan De Estudios Emba",
+    "metodo_usado": "crudo",
+    "caracteres": 2927,
+    "requiere_revision_manual": true
+  },
+  {
+    "pdf_original": "plan-de-estudios-mba.pdf",
+    "archivo_txt": "plan_de_estudios_mba.txt",
+    "nombre_sugerido": "Plan De Estudios Mba",
+    "metodo_usado": "crudo",
+    "caracteres": 2503,
+    "requiere_revision_manual": true
+  }
+]
