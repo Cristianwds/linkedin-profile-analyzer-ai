@@ -1328,7 +1328,7 @@ def construir_mapa_reemplazos(datos_alumno, fecha_hoy):
     }
 
 
-def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_carpeta_destino, datos_alumno, fecha_hoy):
+def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_carpeta_destino, datos_alumno, fecha_hoy, avisar=print):
     """
     Genera el informe de un alumno copiando la plantilla de Google Docs, reemplazando los
     placeholders {{...}} por la información analizada por la IA, y exportando el resultado a
@@ -1346,7 +1346,7 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
     nombre = datos_alumno.get('nombre_estudiante', 'Desconocido')
     nombre_documento = f"Informe_LinkedIn_{apellido}_{nombre}".strip()
 
-    print(f"✍️  Generando documento de feedback para: {nombre} {apellido}...")
+    avisar(f"✍️  Generando documento de feedback para: {nombre} {apellido}...")
 
     try:
         # 1. Copiamos la plantilla directo a la carpeta de destino.
@@ -1397,16 +1397,16 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
             print(f"   [Aviso] No se detectaron reemplazos (intento {intento+1}/{intentos_batch}). Reintentando en 2s...")
             time.sleep(2)
         else:
-            print(f"   ⚠️ El documento de {nombre} {apellido} se creó, pero no se pudo completar la información.")
+            avisar(f"   ⚠️ El documento de {nombre} {apellido} se creó, pero no se pudo completar la información.")
 
         # 5. Exportamos el Doc ya completado a PDF, lo subimos a la misma carpeta, y borramos
         #    el Doc editable intermedio — en Drive solo queda el PDF final.
-        id_pdf = _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino)
+        id_pdf = _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino, avisar=avisar)
         if id_pdf:
             print(f"✅ Informe guardado en Drive como PDF (ID: {id_pdf}).")
             return id_pdf
 
-        print(f"   [⚠️ No se pudo exportar a PDF; queda el Doc editable como respaldo (ID: {doc_id}).]")
+        avisar(f"   [⚠️ No se pudo exportar a PDF; queda el Doc editable como respaldo (ID: {doc_id}).]")
         return doc_id
 
     except Exception as e:
@@ -1414,7 +1414,7 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
         return None
 
 
-def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino):
+def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino, avisar=print):
     """
     Exporta un Google Doc ya completado a PDF (conversión de Google, sin costo de IA), sube ese
     PDF a la misma carpeta, y borra el Doc editable intermedio.
@@ -1426,11 +1426,10 @@ def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, i
     Drive — así que se devuelve igual el ID del PDF, solo con un aviso de que quedó un Doc
     sobrante sin borrar.
 
-    Reintenta la descarga del export con backoff: el Doc se acaba de crear/editar (files().copy
-    + batchUpdate) y a veces la API de Drive tarda unos segundos en "verlo" desde export_media
-    — más notorio en Unidades Compartidas —, lo que devuelve un 404 "File not found" pasajero
-    aunque el archivo exista. Mismo patrón que ya usa el batchUpdate de los placeholders más
-    arriba.
+    Reintenta la descarga del export, y también el borrado final, con backoff: el Doc se acaba
+    de crear/editar (files().copy + batchUpdate) y a veces la API de Drive tarda unos segundos en
+    "verlo" desde export_media o delete — más notorio en Unidades Compartidas —, lo que devuelve
+    un 404 "File not found" pasajero aunque el archivo exista.
     """
     intentos_maximos = 4
     for intento in range(intentos_maximos):
@@ -1449,10 +1448,10 @@ def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, i
         except Exception as e:
             if intento < intentos_maximos - 1:
                 espera = 2 * (intento + 1)  # 2s, 4s, 6s...
-                print(f"   [⏳ Export a PDF: '{e}'. Reintento {intento + 1}/{intentos_maximos - 1} en {espera}s...]")
+                avisar(f"   [⏳ Export a PDF: '{e}'. Reintento {intento + 1}/{intentos_maximos - 1} en {espera}s...]")
                 time.sleep(espera)
             else:
-                print(f"   [⚠️ Falló la exportación a PDF tras {intentos_maximos} intentos: {e}]")
+                avisar(f"   [⚠️ Falló la exportación a PDF tras {intentos_maximos} intentos: {e}]")
                 return None
 
     try:
@@ -1472,21 +1471,30 @@ def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, i
     except Exception as e:
         # Acá sí es una falla real: no llegamos a tener el PDF. El Doc original queda intacto
         # como respaldo (no se intentó borrar todavía).
-        print(f"   [⚠️ El PDF se exportó pero falló al subirlo a Drive: {e}]")
+        avisar(f"   [⚠️ El PDF se exportó pero falló al subirlo a Drive: {e}]")
         return None
 
-    # c. Recién ahora que el PDF quedó CONFIRMADO en Drive, borramos el Doc intermedio — en un
-    # try/except SEPARADO a propósito. Si esto falla (mismo tipo de demora de "recién creado"
-    # que ya vimos en el export), el PDF real ya existe y ya es un ÉXITO: no hay que reportarlo
-    # como si todo el proceso hubiera fallado, ni devolver None (eso escondería el PDF bueno
-    # detrás de un mensaje de error y el caller pensaría que hay que usar el Doc viejo como
-    # respaldo). Lo único que queda pendiente es un Doc editable sin borrar en Drive — molesto,
-    # pero no es pérdida de información.
-    try:
-        servicio_drive.files().delete(fileId=doc_id, supportsAllDrives=True).execute()
-    except Exception as e:
-        print(f"   [ℹ️ El PDF se generó bien, pero no se pudo borrar el Doc intermedio "
-              f"(ID: {doc_id}) — quedó como archivo sobrante en Drive, se puede borrar a mano: {e}]")
+    # c. Recién ahora que el PDF quedó CONFIRMADO en Drive, borramos el Doc intermedio — con el
+    # mismo tipo de reintento que el export, y en un bloque SEPARADO a propósito. Si TODOS los
+    # reintentos fallan, el PDF real ya existe y ya es un ÉXITO: no hay que reportarlo como si
+    # todo el proceso hubiera fallado, ni devolver None (eso escondería el PDF bueno detrás de un
+    # mensaje de error y el caller pensaría que hay que usar el Doc viejo como respaldo). Lo único
+    # que queda pendiente es un Doc editable sin borrar en Drive — molesto, pero no es pérdida de
+    # información.
+    intentos_borrado = 3
+    for intento in range(intentos_borrado):
+        try:
+            servicio_drive.files().delete(fileId=doc_id, supportsAllDrives=True).execute()
+            break
+        except Exception as e:
+            if intento < intentos_borrado - 1:
+                espera = 2 * (intento + 1)  # 2s, 4s...
+                avisar(f"   [⏳ Borrado del Doc intermedio: '{e}'. Reintento {intento + 1}/{intentos_borrado - 1} en {espera}s...]")
+                time.sleep(espera)
+            else:
+                avisar(f"   [ℹ️ El PDF se generó bien, pero no se pudo borrar el Doc intermedio "
+                       f"(ID: {doc_id}) tras {intentos_borrado} intentos — quedó como archivo "
+                       f"sobrante en Drive, se puede borrar a mano: {e}]")
 
     return id_pdf
 
@@ -1683,7 +1691,8 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
                 ID_PLANTILLA_INFORME,
                 carpetas_carrera_hoy[nombre_carpeta],
                 resultado,
-                fecha_hoy
+                fecha_hoy,
+                avisar=_avisar
             )
 
     _avisar("🎉 PIPELINE FINALIZADO.", total_pdfs, total_pdfs)
