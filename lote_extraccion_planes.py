@@ -97,6 +97,46 @@ def _guardar_manifiesto(manifiesto_por_pdf):
         json.dump(entradas, f, ensure_ascii=False, indent=2)
 
 
+def procesar_un_pdf(ruta_pdf, nombre_pdf, incluir_texto_crudo=False, callback_aviso=None):
+    """
+    Extrae el texto de UN PDF de plan de estudios y arma el diccionario de resultado que
+    comparten tanto procesar_carpeta() de acá abajo (que además lo guarda como .txt suelto en
+    planes_de_estudio/ y lo anota en manifiesto_planes.json) como el endpoint de carga por lote
+    de la web en web_app.py (que en cambio deja el texto en memoria para que la persona confirme
+    a mano a qué carrera corresponde, antes de guardar nada definitivo). Esta función NO persiste
+    nada por su cuenta — solo extrae y arma el resultado, para que cada uno de los dos usos
+    decida qué hacer con él.
+    """
+    archivo_txt = _slug_desde_nombre_pdf(nombre_pdf)
+    nombre_sugerido = _nombre_sugerido_desde_pdf(nombre_pdf)
+    try:
+        texto_final, metodo_usado = extractor.extraer_texto_de_pdf(
+            ruta_pdf, incluir_texto_crudo=incluir_texto_crudo, callback_aviso=callback_aviso
+        )
+    except ValueError as e:
+        return {
+            "pdf_original": nombre_pdf,
+            "archivo_txt": None,
+            "nombre_sugerido": nombre_sugerido,
+            "texto": None,
+            "metodo_usado": "error",
+            "caracteres": 0,
+            "requiere_revision_manual": True,
+            "error": str(e),
+        }
+
+    return {
+        "pdf_original": nombre_pdf,
+        "archivo_txt": archivo_txt,
+        "nombre_sugerido": nombre_sugerido,
+        "texto": texto_final,
+        "metodo_usado": metodo_usado,
+        "caracteres": len(texto_final),
+        "requiere_revision_manual": metodo_usado in ("crudo", "ia"),
+        "error": None,
+    }
+
+
 def procesar_carpeta(carpeta_pdfs, incluir_texto_crudo=False, forzar=False):
     if not os.path.isdir(carpeta_pdfs):
         print(f"❌ No se encontró la carpeta: {carpeta_pdfs}")
@@ -136,42 +176,27 @@ def procesar_carpeta(carpeta_pdfs, incluir_texto_crudo=False, forzar=False):
 
     for indice, nombre_pdf in enumerate(pendientes, start=1):
         ruta_pdf = os.path.join(carpeta_pdfs, nombre_pdf)
-        archivo_txt = _slug_desde_nombre_pdf(nombre_pdf)
-        nombre_sugerido = _nombre_sugerido_desde_pdf(nombre_pdf)
 
         print(f"[{indice}/{len(pendientes)}] Procesando: {nombre_pdf}")
-        try:
-            texto_final, metodo_usado = extractor.extraer_texto_de_pdf(
-                ruta_pdf,
-                incluir_texto_crudo=incluir_texto_crudo,
-                callback_aviso=lambda m: print(f"    [{m}]")
-            )
-        except ValueError as e:
-            print(f"    ❌ {e}")
-            manifiesto[nombre_pdf] = {
-                "pdf_original": nombre_pdf,
-                "archivo_txt": None,
-                "nombre_sugerido": nombre_sugerido,
-                "metodo_usado": "error",
-                "caracteres": 0,
-                "requiere_revision_manual": True,
-                "error": str(e),
-            }
+        resultado = procesar_un_pdf(
+            ruta_pdf, nombre_pdf,
+            incluir_texto_crudo=incluir_texto_crudo,
+            callback_aviso=lambda m: print(f"    [{m}]")
+        )
+
+        # El manifiesto guarda solo metadatos, no el texto completo (eso ya queda en el .txt
+        # aparte) — por eso se descarta la clave "texto" acá antes de anotarlo.
+        entrada_manifiesto = {k: v for k, v in resultado.items() if k != "texto"}
+        manifiesto[nombre_pdf] = entrada_manifiesto
+
+        if resultado["error"]:
+            print(f"    ❌ {resultado['error']}")
             print("-" * 60)
             continue
 
-        ruta_guardada = extractor.guardar_txt(texto_final, archivo_txt)
-        print(f"    ✅ Guardado en: {ruta_guardada} (método: {metodo_usado}, "
-              f"{len(texto_final)} caracteres)")
-
-        manifiesto[nombre_pdf] = {
-            "pdf_original": nombre_pdf,
-            "archivo_txt": archivo_txt,
-            "nombre_sugerido": nombre_sugerido,
-            "metodo_usado": metodo_usado,
-            "caracteres": len(texto_final),
-            "requiere_revision_manual": metodo_usado in ("crudo", "ia"),
-        }
+        ruta_guardada = extractor.guardar_txt(resultado["texto"], resultado["archivo_txt"])
+        print(f"    ✅ Guardado en: {ruta_guardada} (método: {resultado['metodo_usado']}, "
+              f"{resultado['caracteres']} caracteres)")
         print("-" * 60)
 
     _guardar_manifiesto(manifiesto)

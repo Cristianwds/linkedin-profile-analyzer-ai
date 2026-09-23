@@ -297,6 +297,31 @@
   }
   .editor-plan .acciones{display:flex; gap:10px;}
 
+  /* ---------- carga por lote de planes ---------- */
+  .fila-lote-plan{
+    border:1px solid var(--borde);
+    border-radius:8px;
+    padding:16px;
+    margin-top:14px;
+  }
+  .cabecera-lote{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+  .cabecera-lote .nombre-pdf{font-weight:600; font-size:.92rem;}
+  .caracteres-lote{font-size:.8rem; color:var(--texto-tenue);}
+  .aviso-revision{font-size:.8rem; color:var(--amarillo); font-weight:600;}
+  .texto-extraido-lote{
+    width:100%;
+    min-height:160px;
+    font-family:ui-monospace,'SF Mono',Consolas,monospace;
+    font-size:.82rem;
+    padding:12px;
+    border:1px solid var(--borde);
+    border-radius:8px;
+    resize:vertical;
+    margin-bottom:12px;
+  }
+  .asignacion-lote{margin-bottom:12px;}
+  .campos-nueva-carrera-lote{display:grid; grid-template-columns:2fr 2fr 1fr; gap:10px; margin-top:10px;}
+
   .oculto{display:none !important;}
   .mensaje-error{background:var(--rojo-bg); color:var(--rojo); padding:10px 14px; border-radius:8px; font-size:.85rem; margin-bottom:14px;}
   .mensaje-ok{background:var(--verde-bg); color:var(--verde); padding:10px 14px; border-radius:8px; font-size:.85rem; margin-bottom:14px;}
@@ -490,6 +515,22 @@
           <button class="primario" id="btn-agregar-carrera">Agregar carrera</button>
         </div>
         <div id="mensaje-carreras" style="margin-top:14px;"></div>
+      </div>
+
+      <div class="panel" id="panel-lote-planes">
+        <h2>Carga por lote de planes de estudio</h2>
+        <p class="desc">Subí varios PDF de una sola vez. Se extraen todos con la misma lógica automática de siempre (grilla → pilares → narrativo → tablas → IA como último recurso) y quedan acá esperando tu confirmación — no se guarda nada hasta que elijas a qué carrera corresponde cada uno.</p>
+
+        <input type="file" id="input-archivos-lote" accept="application/pdf" multiple>
+        <button class="primario" id="btn-iniciar-lote" style="margin-left:12px;">Extraer todos</button>
+
+        <div class="oculto" id="progreso-lote" style="margin-top:16px;">
+          <div class="estado-linea" id="texto-progreso-lote">Preparando…</div>
+          <div class="barra-progreso"><div class="relleno" id="relleno-progreso-lote"></div></div>
+        </div>
+
+        <div id="mensaje-lote" style="margin-top:14px;"></div>
+        <div id="resultados-lote"></div>
       </div>
     </section>
 
@@ -868,6 +909,179 @@ document.getElementById('btn-agregar-carrera').addEventListener('click', async (
     msg.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
   }
 });
+
+/* ---------------- carga por lote de planes de estudio ---------------- */
+let intervaloPollingLote = null;
+let ultimoIndiceRenderizadoLote = 0;
+
+document.getElementById('btn-iniciar-lote').addEventListener('click', async () => {
+  const input = document.getElementById('input-archivos-lote');
+  const msg = document.getElementById('mensaje-lote');
+  msg.innerHTML = '';
+
+  if (!input.files.length){
+    msg.innerHTML = '<div class="mensaje-error">Elegí al menos un PDF.</div>';
+    return;
+  }
+
+  const formData = new FormData();
+  for (const archivo of input.files) formData.append('archivos', archivo);
+
+  const btn = document.getElementById('btn-iniciar-lote');
+  btn.disabled = true;
+  btn.textContent = 'Subiendo…';
+
+  document.getElementById('resultados-lote').innerHTML = '';
+  ultimoIndiceRenderizadoLote = 0;
+
+  try{
+    const r = await apiFetch(`${API}/api/planes/lote/iniciar`, {method: 'POST', body: formData});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'No se pudo iniciar la carga.');
+
+    document.getElementById('progreso-lote').classList.remove('oculto');
+    monitorearLotePlanes(d.lote_id);
+  }catch(e){
+    msg.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Extraer todos';
+  }
+});
+
+function monitorearLotePlanes(loteId){
+  intervaloPollingLote = setInterval(async () => {
+    const r = await apiFetch(`${API}/api/planes/lote/${loteId}`);
+    const d = await r.json();
+
+    const pct = d.total > 0 ? Math.round((d.procesados / d.total) * 100) : 0;
+    document.getElementById('relleno-progreso-lote').style.width = pct + '%';
+    document.getElementById('texto-progreso-lote').textContent =
+      d.estado === 'finalizado' ? `Listo: ${d.total} de ${d.total} procesados.` : `Procesando ${d.procesados} de ${d.total}…`;
+
+    // Solo agregamos al DOM las filas nuevas desde el último poll — así no pisamos lo que la
+    // persona ya esté editando o eligiendo en una fila que terminó antes.
+    for (let i = ultimoIndiceRenderizadoLote; i < d.resultados.length; i++){
+      agregarFilaResultadoLote(d.resultados[i], i);
+    }
+    ultimoIndiceRenderizadoLote = d.resultados.length;
+
+    if (d.estado === 'finalizado'){
+      clearInterval(intervaloPollingLote);
+    }
+  }, 2000);
+}
+
+function agregarFilaResultadoLote(res, indice){
+  const cont = document.getElementById('resultados-lote');
+  const div = document.createElement('div');
+  div.className = 'fila-lote-plan';
+  div.dataset.indice = indice;
+
+  if (res.error){
+    div.innerHTML = `
+      <div class="cabecera-lote">
+        <span class="nombre-pdf">${res.pdf_original}</span>
+        <span class="chip rojo">error</span>
+      </div>
+      <div class="mensaje-error" style="margin:0;">${res.error}</div>
+    `;
+    cont.appendChild(div);
+    return;
+  }
+
+  const claseChip = res.requiere_revision_manual ? 'amarillo' : 'verde';
+  const grado = carrerasCache.filter(c => (c.nivel || 'grado') !== 'posgrado');
+  const posgrado = carrerasCache.filter(c => c.nivel === 'posgrado');
+  const opcionesGrado = grado.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+  const opcionesPosgrado = posgrado.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+
+  div.innerHTML = `
+    <div class="cabecera-lote">
+      <span class="nombre-pdf">${res.pdf_original}</span>
+      <span class="chip ${claseChip}">${res.metodo_usado}</span>
+      <span class="caracteres-lote">${res.caracteres} caracteres</span>
+      ${res.requiere_revision_manual ? '<span class="aviso-revision">⚠️ convendría revisar el texto antes de guardar</span>' : ''}
+    </div>
+    <textarea class="texto-extraido-lote">${res.texto}</textarea>
+    <div class="asignacion-lote">
+      <label>Carrera de destino</label>
+      <select class="select-destino-lote">
+        <option value="">— Crear carrera nueva —</option>
+        ${opcionesGrado ? `<optgroup label="Grado">${opcionesGrado}</optgroup>` : ''}
+        ${opcionesPosgrado ? `<optgroup label="Posgrado">${opcionesPosgrado}</optgroup>` : ''}
+      </select>
+      <div class="campos-nueva-carrera-lote">
+        <input type="text" class="input-nombre-nueva-lote" placeholder="Nombre de la carrera" value="${res.nombre_sugerido}">
+        <input type="text" class="input-keywords-nueva-lote" placeholder="Palabras clave, separadas por coma">
+        <select class="select-nivel-nueva-lote">
+          <option value="grado">Grado</option>
+          <option value="posgrado">Posgrado</option>
+        </select>
+      </div>
+    </div>
+    <button class="primario btn-guardar-lote">Guardar</button>
+    <div class="mensaje-fila-lote"></div>
+  `;
+  cont.appendChild(div);
+
+  const selectDestino = div.querySelector('.select-destino-lote');
+  const camposNueva = div.querySelector('.campos-nueva-carrera-lote');
+  selectDestino.addEventListener('change', () => {
+    camposNueva.classList.toggle('oculto', selectDestino.value !== '');
+  });
+
+  div.querySelector('.btn-guardar-lote').addEventListener('click', async () => {
+    const btnGuardar = div.querySelector('.btn-guardar-lote');
+    const msgFila = div.querySelector('.mensaje-fila-lote');
+    const texto = div.querySelector('.texto-extraido-lote').value;
+    const destino = selectDestino.value;
+
+    msgFila.innerHTML = '';
+    btnGuardar.disabled = true;
+    btnGuardar.textContent = 'Guardando…';
+
+    try{
+      let nombreCarrera = destino;
+
+      if (!destino){
+        const nombreNuevo = div.querySelector('.input-nombre-nueva-lote').value.trim();
+        const keywords = div.querySelector('.input-keywords-nueva-lote').value.split(',').map(k => k.trim()).filter(Boolean);
+        const nivelNuevo = div.querySelector('.select-nivel-nueva-lote').value;
+
+        if (!nombreNuevo || keywords.length === 0){
+          throw new Error('Completá el nombre y al menos una palabra clave para la carrera nueva.');
+        }
+
+        const rCarrera = await apiFetch(`${API}/api/carreras`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({nombre: nombreNuevo, palabras_clave: keywords, nivel: nivelNuevo})
+        });
+        const dCarrera = await rCarrera.json();
+        if (!rCarrera.ok) throw new Error(dCarrera.detail || 'No se pudo crear la carrera.');
+        nombreCarrera = nombreNuevo;
+      }
+
+      const rPlan = await apiFetch(`${API}/api/carreras/${encodeURIComponent(nombreCarrera)}/plan`, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({texto})
+      });
+      const dPlan = await rPlan.json();
+      if (!rPlan.ok) throw new Error(dPlan.detail || 'No se pudo guardar el plan.');
+
+      msgFila.innerHTML = `<div class="mensaje-ok">Guardado en '${nombreCarrera}' (${dPlan.caracteres} caracteres).</div>`;
+      btnGuardar.textContent = 'Guardado ✓';
+      cargarCarreras();
+      poblarSelectCarreras();
+    }catch(e){
+      msgFila.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+      btnGuardar.disabled = false;
+      btnGuardar.textContent = 'Guardar';
+    }
+  });
+}
 </script>
 </body>
 </html>

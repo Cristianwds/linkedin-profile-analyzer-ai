@@ -8,7 +8,7 @@ import hashlib
 import unicodedata
 import almacenamiento_estado
 
-from datetime import date
+from datetime import date, datetime
 
 from google import genai
 from google.genai import types
@@ -1753,7 +1753,7 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
     _avisar("Iniciando Pipeline de Desarrollo Profesional UdeSA...")
 
     # Fecha calculada una única vez acá, y pasada como parámetro al resto del pipeline.
-    hoy = date.today()
+    hoy = datetime.now()
     fecha_hoy = hoy.strftime("%d/%m/%Y")   # Formato humano: IA, informes, columna 'Fecha' del Histórico
     fecha_iso = hoy.strftime("%Y-%m-%d")   # Formato ISO: nombres de hoja y de subcarpetas
 

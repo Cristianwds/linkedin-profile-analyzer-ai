@@ -59,6 +59,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import main as pipeline
 import extraccion_plan_estudios as extractor
+import lote_extraccion_planes as lote
 import almacenamiento_estado
 
 app = FastAPI(title="UdeSA · Análisis de Perfiles de LinkedIn")
@@ -398,7 +399,7 @@ async def subir_plan_de_estudios(nombre: str, archivo: UploadFile = File(...), _
         os.remove(ruta_temporal)
 
     nombre_archivo_txt = pipeline.CARRERAS_UDESA[nombre]["archivo_plan"]
-    ruta_destino = ruta_destino = pipeline.ruta_plan_de_estudios(pipeline.CARRERAS_UDESA[nombre])
+    ruta_destino = pipeline.ruta_plan_de_estudios(pipeline.CARRERAS_UDESA[nombre])
     almacenamiento_estado.escribir_texto(ruta_destino, texto_final)
 
     return {
@@ -410,6 +411,109 @@ async def subir_plan_de_estudios(nombre: str, archivo: UploadFile = File(...), _
         "requiere_revision_manual": metodo_usado in ("crudo", "ia"),
         "vista_previa": texto_final[:2000],
     }
+
+
+# ------------------------------------------------------------------------------
+# Carga por lote: subís varios PDF de una, se extraen todos en background (puede tardar
+# minutos si son muchos) y el resultado de cada uno queda esperando que la persona confirme a
+# mano a qué carrera corresponde — no se guarda nada de forma automática. Reusa la misma lógica
+# de extracción de lote_extraccion_planes.py (el script de terminal que ya existía) para no
+# duplicarla; a diferencia de ese script, acá no se escribe ningún .txt suelto ni manifiesto:
+# el resultado se guarda en memoria y se descarta una vez que la persona lo confirma (con los
+# endpoints de siempre, POST /api/carreras + PUT /api/carreras/{nombre}/plan) o cierra la página.
+# ------------------------------------------------------------------------------
+
+CORRIDAS_LOTE_PLANES = {}
+LOTE_PLANES_LOCK = threading.Lock()
+
+
+def _nueva_entrada_lote_planes(email, total):
+    return {
+        "estado": "corriendo",  # corriendo | finalizado
+        "resultados": [],
+        "procesados": 0,
+        "total": total,
+        "iniciado_por": email,
+        "iniciado_en": time.time(),
+    }
+
+
+def _procesar_lote_planes_en_thread(lote_id, archivos_temporales):
+    for ruta_temporal, nombre_pdf in archivos_temporales:
+        try:
+            resultado = lote.procesar_un_pdf(ruta_temporal, nombre_pdf)
+        except Exception as e:
+            resultado = {
+                "pdf_original": nombre_pdf,
+                "archivo_txt": None,
+                "nombre_sugerido": lote._nombre_sugerido_desde_pdf(nombre_pdf),
+                "texto": None,
+                "metodo_usado": "error",
+                "caracteres": 0,
+                "requiere_revision_manual": True,
+                "error": str(e),
+            }
+        finally:
+            try:
+                os.remove(ruta_temporal)
+            except OSError:
+                pass
+
+        with LOTE_PLANES_LOCK:
+            entrada = CORRIDAS_LOTE_PLANES[lote_id]
+            entrada["resultados"].append(resultado)
+            entrada["procesados"] = len(entrada["resultados"])
+
+    with LOTE_PLANES_LOCK:
+        CORRIDAS_LOTE_PLANES[lote_id]["estado"] = "finalizado"
+
+
+@app.post("/api/planes/lote/iniciar")
+async def iniciar_carga_lote_planes(
+    archivos: List[UploadFile] = File(...),
+    email: str = Depends(email_actual),
+    _creds: Credentials = Depends(usuario_actual),
+):
+    """
+    Recibe varios PDF a la vez, los guarda temporalmente y arranca la extracción de todos en
+    background (igual que /api/pipeline/iniciar). El frontend va consultando
+    GET /api/planes/lote/{lote_id} para mostrar el progreso y, cuando termina, la lista de
+    resultados para que la persona revise y confirme a qué carrera va cada uno.
+    """
+    if not archivos:
+        raise HTTPException(400, "No se recibió ningún archivo.")
+    for archivo in archivos:
+        if not archivo.filename.lower().endswith(".pdf"):
+            raise HTTPException(400, f"'{archivo.filename}' no es un PDF.")
+
+    os.makedirs("/tmp/planes_subidos", exist_ok=True)
+    archivos_temporales = []
+    for archivo in archivos:
+        ruta_temporal = f"/tmp/planes_subidos/{uuid.uuid4()}.pdf"
+        contenido = await archivo.read()
+        with open(ruta_temporal, "wb") as f:
+            f.write(contenido)
+        archivos_temporales.append((ruta_temporal, archivo.filename))
+
+    lote_id = str(uuid.uuid4())
+    with LOTE_PLANES_LOCK:
+        CORRIDAS_LOTE_PLANES[lote_id] = _nueva_entrada_lote_planes(email, len(archivos_temporales))
+
+    hilo = threading.Thread(
+        target=_procesar_lote_planes_en_thread, args=(lote_id, archivos_temporales), daemon=True
+    )
+    hilo.start()
+
+    return {"lote_id": lote_id, "total": len(archivos_temporales)}
+
+
+@app.get("/api/planes/lote/{lote_id}")
+def estado_carga_lote_planes(lote_id: str, _creds: Credentials = Depends(usuario_actual)):
+    with LOTE_PLANES_LOCK:
+        entrada = CORRIDAS_LOTE_PLANES.get(lote_id)
+        if entrada is None:
+            raise HTTPException(404, "No existe esa carga por lote.")
+        return dict(entrada)
 
 
 @app.get("/api/carreras/{nombre}/plan")
