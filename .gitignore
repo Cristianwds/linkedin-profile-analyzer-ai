@@ -28,3 +28,5 @@ client_secret_web.json
 tokens/
 
 tempCodeRunnerFile.py
+
+.env.yaml

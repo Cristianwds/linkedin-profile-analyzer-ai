@@ -17,3 +17,6 @@ __pycache__/
 Thumbs.db
 pdfs/
 planes_de_estudio/
+
+pdfs_grado/
+pdfs_posgrado/

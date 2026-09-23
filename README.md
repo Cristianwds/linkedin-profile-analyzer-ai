@@ -44,8 +44,25 @@ Desde el panel se puede:
   `extraccion_plan_estudios.py` (grilla por coordenadas → tablas → reordenamiento con IA como
   último recurso) y avisa si el resultado conviene revisarlo a mano.
 
-Las carreras y sus palabras clave viven en `carreras.json` (ya no están hardcodeadas en
-`main.py`), así que los cambios desde la web quedan persistidos ahí.
+Las carreras y sus palabras clave viven en `carreras_grado.json` / `carreras_posgrado.json`
+(ya no están hardcodeadas en `main.py`), así que los cambios desde la web quedan persistidos ahí.
+
+### Carga masiva de planes de estudio (`lote_extraccion_planes.py`)
+
+Para cargar de golpe muchos PDFs de planes de estudio (por ejemplo, todo el catálogo de
+posgrados), sin pasar uno por uno por la web:
+
+```bash
+python lote_extraccion_planes.py "pdfs_posgrado"
+```
+
+Genera los `.txt` en `planes_de_estudio/<nivel>/` y un `manifiesto_planes.json` con el resultado
+de cada archivo. El nombre del `.txt` de salida sale sin tildes ni espacios automáticamente
+(`Maestría en Finanzas.pdf` → `maestria_en_finanzas.txt`).
+
+Los PDFs de origen viven en `pdfs_grado/` y `pdfs_posgrado/` — son solo para uso local (correr
+este script) y están excluidos del deploy vía `.gcloudignore`, ya que el pipeline en producción
+lee los `.txt` ya extraídos, no los PDFs crudos.
 
 ## Autenticación con Google
 
@@ -56,24 +73,69 @@ Las carreras y sus palabras clave viven en `carreras.json` (ya no están hardcod
 4. Si se agregan scopes nuevos en el futuro, hay que borrar `token.json` para forzar un login
    nuevo (ver notas del proyecto).
 
+Para el panel web hace falta además un cliente OAuth de tipo "Aplicación web" (`client_secret_web.json`,
+nunca se commitea — en producción se monta desde Secret Manager, ver más abajo).
+
 ## Despliegue en Cloud Run
 
-```bash
-gcloud run deploy linkedin-profile-analyzer \
-  --source . \
-  --region southamerica-east1 \
-  --service-account TU_SERVICE_ACCOUNT@849635297315.iam.gserviceaccount.com \
-  --set-env-vars-file .env.yaml \
-  --allow-unauthenticated=false
+### 1. Preparar `.env.yaml`
+
+Cloud Run no acepta el `.env` tal cual — necesita un archivo YAML separado. Creá
+`.env.yaml` en la raíz del repo con las mismas variables que tenés en tu `.env`, pero en
+sintaxis YAML (`clave: "valor"`, **con espacio después de los dos puntos** — sin el espacio,
+`gcloud` tira `expected map-like data`):
+
+```yaml
+ID_SPREADSHEET: "id_de_tu_hoja_de_calculo"
+ID_CARPETA: "id_carpeta_origen_pdfs"
+ID_CARPETA_INFORMES: "id_carpeta_destino_informes"
+ID_CARPETA_ANALIZADOS: "id_carpeta_pdfs_analizados"
+ID_PLANTILLA_INFORME: "id_Informe_modelo"
+ID_PRESENTACION_STATS: "tu_id_de_presentacion"
+ID_CARPETA_PRESENTACIONES: "id_carpeta_destino_presentaciones"
+GEMINI_API_KEY: "tu_api_key_de_gemini"
+GROQ_API_KEY: "tu_key_de_groq"
+NVIDIA_API_KEY: "tu_key_de_nvidia"
+SESSION_SECRET: "clave_generada_con_secrets.token_hex(32)"
+DOMINIO_PERMITIDO: "udesa.edu.ar"
+GCS_BUCKET_ESTADO: "udesa-analizador-perfiles-estado"
 ```
+
+`.env.yaml` tiene los mismos secretos que `.env` — **nunca se commitea** (ya está en
+`.gitignore` y `.gcloudignore`).
+
+### 2. Deployar
+
+```bash
+gcloud run deploy linkedin-profile-analyzer --source . --region southamerica-east1 --service-account linkedin-analyzer-sa@udesa-analizador-perfiles.iam.gserviceaccount.com --env-vars-file .env.yaml --no-allow-unauthenticated
+```
+
+(En `cmd.exe` de Windows no se puede usar `\` para cortar el comando en varias líneas como en
+bash; en PowerShell la continuación es con backtick `` ` ``. Más simple: ponerlo todo en una
+sola línea, como arriba.)
+
+### 3. Habilitar el acceso público al servicio (una sola vez por servicio)
+
+`--no-allow-unauthenticated` bloquea el servicio a nivel de Cloud Run/IAM — nadie puede entrar,
+ni siquiera a `/auth/login`, sin un rol de IAM asignado a mano en el proyecto de GCP. Como el
+control de acceso real de esta app es el login de Google con `DOMINIO_PERMITIDO=udesa.edu.ar`
+(no IAM), hay que abrir el servicio a nivel de Cloud Run y dejar que la app filtre por dominio:
+
+```bash
+gcloud run services add-iam-policy-binding linkedin-profile-analyzer --region southamerica-east1 --member="allUsers" --role="roles/run.invoker"
+```
+
+Esto solo hace falta correrlo una vez (el permiso queda asociado al servicio, no se resetea en
+cada deploy).
 
 Notas:
 - Usá una cuenta de servicio con permisos sobre la carpeta de Drive, el spreadsheet, la
   plantilla de Docs y la presentación de Slides (compartilos con el email de la cuenta de
   servicio), en vez del flujo OAuth de usuario — así no depende de que alguien haga login a
   mano dentro del contenedor.
-- `--allow-unauthenticated=false` + IAM (o un proxy con SSO de UdeSA) para que el panel no quede
-  público, ya que corre acciones sobre Drive/Sheets institucionales.
+- `GCS_BUCKET_ESTADO` es obligatoria en Cloud Run (disco efímero): sin ella se pierden los
+  tokens de login de cada persona, la caché de análisis y la config de carreras en cada reinicio
+  de la instancia.
 - El estado de las corridas del pipeline vive en memoria del proceso (`web_app.py`), pensado
   para un solo worker/instancia. Si se necesita escalar a más de una instancia concurrente, ese
   estado tiene que pasar a algo compartido (ej. Firestore).
@@ -85,8 +147,12 @@ main.py                        # pipeline principal (Drive -> IA -> Sheets/Docs/
 web_app.py                     # backend FastAPI que envuelve el pipeline para la web
 static/index.html              # frontend del panel (sin build step)
 extraccion_plan_estudios.py    # utilidad para convertir el PDF de un plan de estudios a .txt
-carreras.json                  # config de carreras UdeSA (nombre, palabras clave, archivo_plan)
-planes_de_estudio/*.txt        # planes de estudio en texto plano, usados como contexto extra
+lote_extraccion_planes.py      # procesa una carpeta entera de PDFs de golpe (ver más arriba)
+carreras_grado.json            # config de carreras de grado (nombre, palabras clave, archivo_plan)
+carreras_posgrado.json         # config de carreras de posgrado, mismo formato
+planes_de_estudio/<nivel>/*.txt  # planes de estudio en texto plano, usados como contexto extra
+pdfs_grado/, pdfs_posgrado/    # PDFs de origen para carga masiva — solo uso local, no se deployan
 Dockerfile                     # build para Cloud Run
 .env.example                   # variables de entorno necesarias (copiar a .env)
+.env.yaml                      # mismas variables en YAML, para el deploy a Cloud Run (no se commitea)
 ```
