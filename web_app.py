@@ -338,7 +338,7 @@ def listar_carreras(_creds: Credentials = Depends(usuario_actual)):
     pipeline.recargar_carreras()
     resultado = []
     for nombre, datos in pipeline.CARRERAS_UDESA.items():
-        ruta_plan = os.path.join(pipeline.CARPETA_PLANES_DE_ESTUDIO, datos.get("archivo_plan", ""))
+        ruta_plan = pipeline.ruta_plan_de_estudios(datos)
         resultado.append({
             "nombre": nombre,
             "palabras_clave": datos.get("palabras_clave", []),
@@ -398,7 +398,7 @@ async def subir_plan_de_estudios(nombre: str, archivo: UploadFile = File(...), _
         os.remove(ruta_temporal)
 
     nombre_archivo_txt = pipeline.CARRERAS_UDESA[nombre]["archivo_plan"]
-    ruta_destino = os.path.join(pipeline.CARPETA_PLANES_DE_ESTUDIO, nombre_archivo_txt)
+    ruta_destino = ruta_destino = pipeline.ruta_plan_de_estudios(pipeline.CARRERAS_UDESA[nombre])
     almacenamiento_estado.escribir_texto(ruta_destino, texto_final)
 
     return {

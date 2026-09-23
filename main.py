@@ -502,6 +502,40 @@ ARCHIVO_CARRERAS_POR_NIVEL = {
 }
 ARCHIVO_CARRERAS_LEGACY = "carreras.json"  # el archivo único de antes de separar por nivel
 
+def ruta_plan_de_estudios(datos_carrera):
+    """Ruta del .txt del plan de estudios de una carrera, separado en subcarpeta grado/ o
+    posgrado/ según su nivel (mismo default que guardar_carreras: si el nivel no es válido,
+    asume 'grado'). Centraliza acá la construcción de esta ruta para que main.py y web_app.py
+    no la arme cada uno por su cuenta."""
+    nivel = datos_carrera.get('nivel') if datos_carrera.get('nivel') in ARCHIVO_CARRERAS_POR_NIVEL else 'grado'
+    return os.path.join(CARPETA_PLANES_DE_ESTUDIO, nivel, datos_carrera.get("archivo_plan", ""))
+
+
+def _migrar_planes_de_estudio_a_subcarpetas_si_hace_falta():
+    """
+    Los .txt de planes de estudio vivían todos juntos en planes_de_estudio/ (grado y posgrado
+    mezclados) — a diferencia de los JSON de carreras, que ya estaban separados. Esta función
+    los reparte en planes_de_estudio/grado/ y planes_de_estudio/posgrado/.
+
+    Es idempotente POR ARCHIVO (no con un flag global como _migrar_carreras_legacy_si_hace_falta):
+    para cada carrera, si el .txt viejo (ruta plana) existe y el nuevo (con subcarpeta) todavía
+    no, lo mueve; si ya está migrado, no toca nada. Así no importa si se agregan carreras nuevas
+    después de correr esto una vez, ni si el proceso se reinicia a mitad de la migración.
+    """
+    for nombre_carrera, datos in CARRERAS_UDESA.items():
+        if not datos.get("archivo_plan"):
+            continue
+        ruta_vieja = os.path.join(CARPETA_PLANES_DE_ESTUDIO, datos["archivo_plan"])
+        ruta_nueva = ruta_plan_de_estudios(datos)
+        if not almacenamiento_estado.existe(ruta_vieja) or almacenamiento_estado.existe(ruta_nueva):
+            continue
+        try:
+            texto = almacenamiento_estado.leer_texto(ruta_vieja)
+            almacenamiento_estado.escribir_texto(ruta_nueva, texto)
+            almacenamiento_estado.borrar(ruta_vieja)
+            print(f"   [ℹ️ Migración automática: '{ruta_vieja}' -> '{ruta_nueva}' ({nombre_carrera}).]")
+        except Exception as e:
+            print(f"   [⚠️ No se pudo migrar el plan de '{nombre_carrera}' a subcarpetas: {e}]")
 
 def _migrar_carreras_legacy_si_hace_falta():
     """
@@ -561,7 +595,7 @@ def guardar_carreras(carreras):
 
 
 CARRERAS_UDESA = cargar_carreras()
-
+_migrar_planes_de_estudio_a_subcarpetas_si_hace_falta()
 
 def recargar_carreras():
     """Vuelve a leer los archivos de carreras del disco y actualiza CARRERAS_UDESA in-place
@@ -617,7 +651,7 @@ def eliminar_carrera(nombre_carrera, borrar_archivo_plan=False):
         return False
     guardar_carreras(CARRERAS_UDESA)
     if borrar_archivo_plan and datos.get("archivo_plan"):
-        ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, datos["archivo_plan"])
+        ruta = ruta_plan_de_estudios(datos)
         almacenamiento_estado.borrar(ruta)
     return True
 
@@ -628,7 +662,7 @@ def guardar_texto_plan_de_estudios(nombre_carrera, texto):
     Lanza ValueError si la carrera no existe."""
     if nombre_carrera not in CARRERAS_UDESA:
         raise ValueError(f"No existe la carrera '{nombre_carrera}'.")
-    ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, CARRERAS_UDESA[nombre_carrera]["archivo_plan"])
+    ruta = ruta_plan_de_estudios(CARRERAS_UDESA[nombre_carrera])
     almacenamiento_estado.escribir_texto(ruta, texto)
     return len(texto)
 
@@ -673,7 +707,7 @@ def cargar_plan_de_estudios(nombre_carrera):
     if not nombre_carrera or nombre_carrera not in CARRERAS_UDESA:
         return None
 
-    ruta = os.path.join(CARPETA_PLANES_DE_ESTUDIO, CARRERAS_UDESA[nombre_carrera]["archivo_plan"])
+    ruta = ruta = ruta_plan_de_estudios(CARRERAS_UDESA[nombre_carrera])
     try:
         return almacenamiento_estado.leer_texto(ruta)
     except Exception as e:
@@ -1638,11 +1672,11 @@ def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, i
     # poder limpiarlos en batch el día que se ajuste el permiso de borrado en Drive.
     if not borrado_exitoso:
         carpeta_docs_residuales = obtener_o_crear_subcarpeta(
-            servicio_drive, id_carpeta_destino, "Docs sin borrar (revisar permisos)"
+            servicio_drive, id_carpeta_destino, "Docs informes"
         )
         movido = mover_archivo_a_carpeta(servicio_drive, doc_id, carpeta_docs_residuales, id_carpeta_destino)
         if movido:
-            avisar(f"   [📦 Doc intermedio (ID: {doc_id}) movido a 'Docs sin borrar (revisar permisos)'.]")
+            avisar(f"   [📦 Doc intermedio (ID: {doc_id}) movido a 'Docs informes'.]")
         else:
             avisar(f"   [⚠️ Tampoco se pudo mover el Doc intermedio (ID: {doc_id}) — quedó junto al PDF final.]")
 

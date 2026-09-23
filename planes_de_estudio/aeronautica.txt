@@ -1,0 +1,51 @@
+PRIMER AÑO
+- Álgebra Lineal
+- Análisis Matemático I
+- Pensamiento Computacional (*PF)
+- Electiva de Arte
+- Análisis Matemático II
+- Matemática Discreta
+- Algoritmos y Estructuras de Datos
+- Electiva de Ciencias
+
+SEGUNDO AÑO
+- Fundamentos de la Probabilidad y Estádistica
+- Paradigmas de Programación
+- Física I
+- Economía I
+- Fundamentos de la Inteligencia Artificial
+- Inferencia y Estimación
+- Análisis Matemático III
+- Métodos Numéricos y Optimización
+
+TERCER AÑO
+- Aprendizaje Automático y Aprendizaje Profundo (*PF)
+- Arquitectura de Computadoras y Sistemas Operativos
+- Electiva de Filosofía
+- Física II
+- Visión Artificial (*PF)
+- Redes y Comunicación
+- Base de Datos
+- Dinámica de Sistemas
+
+CUARTO AÑO
+- Procesamiento de Lenguaje Natural (*PF)
+- Principios de la Robótica Autónoma (*PF)
+- Ingeniería de Software (*PF)
+- Electiva de Historia
+- Aprendizaje Reforzado (*PF)
+- Criptografía y Ciberseguridad
+- Materia Optativa I
+- Materia Optativa II
+- Escritura y Oratoria
+
+QUINTO AÑO
+- Materia Optativa III
+- Materia Optativa IV
+- Ética de la Inteligencia Artificial
+- Taller de Proyecto Final
+- Entrepreneurship
+- Materia Optativa V
+- Materia Optativa VI
+- Trabajo de Graduación - Proyecto Final
+- Práctica Profesional Supervisada
