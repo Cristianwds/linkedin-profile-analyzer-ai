@@ -427,7 +427,7 @@ def mover_archivo_a_carpeta(servicio_drive, file_id, id_carpeta_destino, id_carp
         ).execute()
         return True
     except Exception as e:
-        print(f"   [⚠️ No se pudo mover el archivo a 'Analizados': {e}]")
+        print(f"   [⚠️ No se pudo mover el archivo {file_id} a la carpeta destino: {e}]")
         return False
 
 
@@ -913,6 +913,84 @@ ETIQUETA_FUERTE = "Punto Fuerte: "
 ETIQUETA_CRITICO = "Punto Crítico: "
 ETIQUETA_ACCION = "Próxima Acción: "
 
+def obtener_o_crear_hoja_historico(servicio_sheets, spreadsheet_id, año):
+    """
+    Devuelve (nombre_hoja, nombre_hoja_anterior) para la hoja Histórico del año dado.
+
+    'Histórico' dejó de ser una única hoja fija para siempre: ahora hay una por año
+    ('Histórico 2026', 'Histórico 2027', ...), para que no crezca sin límite. Esta función:
+
+      1. Si ya existe 'Histórico {año}', la reutiliza tal cual (nombre_hoja_anterior=None: no
+         cambió nada respecto a la corrida anterior, no hay fórmulas que reescribir).
+      2. Si no existe pero todavía queda la hoja vieja sin año ('Histórico', de antes de este
+         cambio), la migra: la renombra in-place a 'Histórico {año}' — conserva todos los datos
+         que ya tenía. Devuelve nombre_hoja_anterior='Histórico'.
+      3. Si no existe ninguna de las dos, busca la hoja 'Histórico {año}' más reciente que haya
+         (típicamente la del año anterior), la duplica, renombra la copia y le borra todas las
+         filas de datos (deja encabezado, columnas y formato intactos). Devuelve
+         nombre_hoja_anterior=<esa hoja fuente>.
+      4. Si no hay absolutamente ninguna hoja Histórico (instalación nueva desde cero), corta
+         con un error pidiendo crear 'Histórico {año}' a mano una vez — mismo criterio que ya
+         usa obtener_o_crear_hoja_diaria con 'Plantilla'.
+
+    En los casos 2 y 3, el caller tiene que llamar después a
+    actualizar_referencia_historico_en_estadisticas() con el nombre_hoja_anterior devuelto, para
+    que las fórmulas de 'Estadísticas del Día' sigan apuntando a la hoja correcta.
+    """
+    nombre_objetivo = f"{NOMBRE_HOJA_HISTORICO} {año}"
+    hojas = _obtener_metadata_hojas(servicio_sheets, spreadsheet_id)
+    titulos = {hoja['title']: hoja['sheetId'] for hoja in hojas}
+
+    if nombre_objetivo in titulos:
+        return nombre_objetivo, None
+
+    # Migración: la hoja vieja sin año todavía existe con ese nombre plano.
+    if NOMBRE_HOJA_HISTORICO in titulos:
+        peticion = {
+            'requests': [{
+                'updateSheetProperties': {
+                    'properties': {'sheetId': titulos[NOMBRE_HOJA_HISTORICO], 'title': nombre_objetivo},
+                    'fields': 'title'
+                }
+            }]
+        }
+        servicio_sheets.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=peticion).execute()
+        print(f"   [ℹ️ Migración automática: '{NOMBRE_HOJA_HISTORICO}' pasa a llamarse '{nombre_objetivo}' "
+              f"(conserva todos los datos que ya tenía).]")
+        return nombre_objetivo, NOMBRE_HOJA_HISTORICO
+
+    # Buscamos la hoja "Histórico {año}" más reciente que exista, para usarla como base.
+    patron_anio = re.compile(rf'^{re.escape(NOMBRE_HOJA_HISTORICO)} (\d{{4}})$')
+    candidatas = [(int(m.group(1)), titulo) for titulo in titulos if (m := patron_anio.match(titulo))]
+
+    if not candidatas:
+        raise RuntimeError(
+            f"No se encontró ninguna hoja '{nombre_objetivo}' ni '{NOMBRE_HOJA_HISTORICO}'. "
+            f"Creá '{nombre_objetivo}' a mano con las 15 columnas correspondientes antes de correr el pipeline."
+        )
+
+    candidatas.sort(key=lambda t: t[0], reverse=True)
+    _, nombre_fuente = candidatas[0]
+
+    peticion = {
+        'requests': [{
+            'duplicateSheet': {
+                'sourceSheetId': titulos[nombre_fuente],
+                'insertSheetIndex': len(hojas),
+                'newSheetName': nombre_objetivo
+            }
+        }]
+    }
+    servicio_sheets.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=peticion).execute()
+
+    # La copia trae todas las filas de datos del año anterior — las borramos, dejando solo el
+    # encabezado (fila 1) y el formato/columnas intactos.
+    servicio_sheets.spreadsheets().values().clear(
+        spreadsheetId=spreadsheet_id, range=f"'{nombre_objetivo}'!A2:O", body={}
+    ).execute()
+
+    print(f"   [📄 Hoja nueva creada para el año {año}: '{nombre_objetivo}' (copiada de '{nombre_fuente}', sin las filas de datos).]")
+    return nombre_objetivo, nombre_fuente
 
 def _construir_texto_observacion(resultado):
     """Arma el texto de la columna Observación a partir de los 3 campos separados de la IA."""
@@ -1061,10 +1139,11 @@ def _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, nombre_hoja, co
     valores = resultado.get('values', [])
     return len(valores) + 1
 
-def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy):
-    """Escribe las filas del día en la hoja fija 'Histórico' (15 columnas, Fecha en A, URL en D),
-    calculando la próxima fila libre en vez de usar append() (ver _obtener_proxima_fila_libre)."""
-    print(f"Escribiendo datos en '{NOMBRE_HOJA_HISTORICO}'...")
+def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy, nombre_hoja_historico):
+    """Escribe las filas del día en la hoja Histórico del año correspondiente (15 columnas,
+    Fecha en A, URL en D), calculando la próxima fila libre en vez de usar append() (ver
+    _obtener_proxima_fila_libre)."""
+    print(f"Escribiendo datos en '{nombre_hoja_historico}'...")
 
     valores = []
     for resultado in lista_resultados:
@@ -1088,9 +1167,9 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
         valores.append(fila)
 
     try:
-        fila_inicio = _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, NOMBRE_HOJA_HISTORICO)
+        fila_inicio = _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, nombre_hoja_historico)
         fila_fin = fila_inicio + len(valores) - 1
-        rango = f"'{NOMBRE_HOJA_HISTORICO}'!A{fila_inicio}:O{fila_fin}"
+        rango = f"'{nombre_hoja_historico}'!A{fila_inicio}:O{fila_fin}"
 
         servicio_sheets.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
@@ -1099,17 +1178,74 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
             body={'values': valores}
         ).execute()
 
-        print(f"✅ ¡Éxito! Se escribieron {len(valores)} filas en '{NOMBRE_HOJA_HISTORICO}' (desde la fila {fila_inicio}).")
+        print(f"✅ ¡Éxito! Se escribieron {len(valores)} filas en '{nombre_hoja_historico}' (desde la fila {fila_inicio}).")
 
-        sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, NOMBRE_HOJA_HISTORICO)
+        sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, nombre_hoja_historico)
         if sheet_id is not None:
             _aplicar_negrita_observaciones(
                 servicio_sheets, spreadsheet_id, sheet_id, fila_inicio,
                 lista_resultados, COLUMNA_OBSERVACION_HISTORICO
             )
     except Exception as e:
-        print(f"Error al escribir en '{NOMBRE_HOJA_HISTORICO}': {e}")
+        print(f"Error al escribir en '{nombre_hoja_historico}': {e}")
 
+def actualizar_referencia_historico_en_estadisticas(servicio_sheets, spreadsheet_id, nombre_hoja_anterior, nombre_hoja_nueva):
+    """
+    Cuando obtener_o_crear_hoja_historico() migra o crea una hoja Histórico nueva, las fórmulas
+    COUNTIFS de 'Estadísticas del Día' quedan armadas a mano apuntando al nombre VIEJO de esa
+    hoja (ej. 'Histórico 2026'!G:G). Esta función las busca y les reemplaza el nombre viejo por
+    el nuevo, para que sigan sumando del año que corresponde sin tocar nada a mano en enero.
+
+    Solo toca fórmulas que mencionan '{nombre_hoja_anterior}'! entre comillas simples (la forma
+    en que Sheets referencia una hoja con espacios en el nombre) — no toca ninguna otra celda.
+    No hace nada si nombre_hoja_anterior es None (caso normal: no cambió el año).
+    """
+    if not nombre_hoja_anterior or nombre_hoja_anterior == nombre_hoja_nueva:
+        return
+
+    sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, NOMBRE_HOJA_ESTADISTICAS_DIA)
+    if sheet_id is None:
+        print(f"   [⚠️ No se encontró la hoja '{NOMBRE_HOJA_ESTADISTICAS_DIA}'; no se actualizaron fórmulas.]")
+        return
+
+    resultado = servicio_sheets.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id,
+        range=f"'{NOMBRE_HOJA_ESTADISTICAS_DIA}'",
+        valueRenderOption='FORMULA'
+    ).execute()
+    filas = resultado.get('values', [])
+
+    referencia_vieja = f"'{nombre_hoja_anterior}'!"
+    referencia_nueva = f"'{nombre_hoja_nueva}'!"
+
+    pedidos = []
+    for fila_idx, fila in enumerate(filas):
+        for col_idx, valor in enumerate(fila):
+            if isinstance(valor, str) and valor.startswith('=') and referencia_vieja in valor:
+                pedidos.append({
+                    'updateCells': {
+                        'rows': [{'values': [{'userEnteredValue': {'formulaValue': valor.replace(referencia_vieja, referencia_nueva)}}]}],
+                        'fields': 'userEnteredValue.formulaValue',
+                        'range': {
+                            'sheetId': sheet_id,
+                            'startRowIndex': fila_idx, 'endRowIndex': fila_idx + 1,
+                            'startColumnIndex': col_idx, 'endColumnIndex': col_idx + 1
+                        }
+                    }
+                })
+
+    if not pedidos:
+        print(f"   [ℹ️ No se encontraron fórmulas en '{NOMBRE_HOJA_ESTADISTICAS_DIA}' que mencionaran "
+              f"'{nombre_hoja_anterior}'; no había nada que actualizar.]")
+        return
+
+    try:
+        servicio_sheets.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={'requests': pedidos}).execute()
+        print(f"   [🔧 Se actualizaron {len(pedidos)} fórmula(s) en '{NOMBRE_HOJA_ESTADISTICAS_DIA}': "
+              f"'{nombre_hoja_anterior}' → '{nombre_hoja_nueva}'.]")
+    except Exception as e:
+        print(f"   [⚠️ No se pudieron actualizar las fórmulas de '{NOMBRE_HOJA_ESTADISTICAS_DIA}' automáticamente "
+              f"— revisalas a mano (buscar '{nombre_hoja_anterior}' y cambiarlo por '{nombre_hoja_nueva}'): {e}]")
 
 def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha_hoy):
     """
@@ -1482,9 +1618,11 @@ def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, i
     # que queda pendiente es un Doc editable sin borrar en Drive — molesto, pero no es pérdida de
     # información.
     intentos_borrado = 3
+    borrado_exitoso = False
     for intento in range(intentos_borrado):
         try:
             servicio_drive.files().delete(fileId=doc_id, supportsAllDrives=True).execute()
+            borrado_exitoso = True
             break
         except Exception as e:
             if intento < intentos_borrado - 1:
@@ -1492,9 +1630,21 @@ def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, i
                 avisar(f"   [⏳ Borrado del Doc intermedio: '{e}'. Reintento {intento + 1}/{intentos_borrado - 1} en {espera}s...]")
                 time.sleep(espera)
             else:
-                avisar(f"   [ℹ️ El PDF se generó bien, pero no se pudo borrar el Doc intermedio "
-                       f"(ID: {doc_id}) tras {intentos_borrado} intentos — quedó como archivo "
-                       f"sobrante en Drive, se puede borrar a mano: {e}]")
+                avisar(f"   [ℹ️ No se pudo borrar el Doc intermedio (ID: {doc_id}) tras {intentos_borrado} intentos "
+                       f"— probablemente falta permiso de borrado en esa Unidad Compartida: {e}]")
+
+    # Si no se pudo borrar (falta de permiso, no timing), no lo dejamos suelto mezclado con el
+    # PDF final: lo movemos a una subcarpeta aparte dentro de la misma carpeta de destino, para
+    # poder limpiarlos en batch el día que se ajuste el permiso de borrado en Drive.
+    if not borrado_exitoso:
+        carpeta_docs_residuales = obtener_o_crear_subcarpeta(
+            servicio_drive, id_carpeta_destino, "Docs sin borrar (revisar permisos)"
+        )
+        movido = mover_archivo_a_carpeta(servicio_drive, doc_id, carpeta_docs_residuales, id_carpeta_destino)
+        if movido:
+            avisar(f"   [📦 Doc intermedio (ID: {doc_id}) movido a 'Docs sin borrar (revisar permisos)'.]")
+        else:
+            avisar(f"   [⚠️ Tampoco se pudo mover el Doc intermedio (ID: {doc_id}) — quedó junto al PDF final.]")
 
     return id_pdf
 
@@ -1635,12 +1785,20 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
         print("-" * 40)
 
     # PASO 3: Escribir en la hoja diaria y en el Histórico
-    servicio_sheets = construir_servicio_sheets(creds)
+        servicio_sheets = construir_servicio_sheets(creds)
     id_presentacion_generada = None
     if servicio_sheets and resultados_finales:
         nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
         escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy)
-        escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy)
+
+        nombre_hoja_historico, nombre_hoja_historico_anterior = obtener_o_crear_hoja_historico(
+            servicio_sheets, ID_SPREADSHEET, hoy.year
+        )
+        actualizar_referencia_historico_en_estadisticas(
+            servicio_sheets, ID_SPREADSHEET, nombre_hoja_historico_anterior, nombre_hoja_historico
+        )
+        escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy, nombre_hoja_historico)
+
         actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy)
         servicio_slides = construir_servicio_slides(creds)
         if servicio_slides and ID_PRESENTACION_STATS:
