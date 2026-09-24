@@ -99,34 +99,49 @@ NVIDIA_API_KEY: "tu_key_de_nvidia"
 SESSION_SECRET: "clave_generada_con_secrets.token_hex(32)"
 DOMINIO_PERMITIDO: "udesa.edu.ar"
 GCS_BUCKET_ESTADO: "udesa-analizador-perfiles-estado"
+GOOGLE_OAUTH_CLIENT_SECRETS_FILE: "/secrets/client_secret_web.json"
 ```
 
 `.env.yaml` tiene los mismos secretos que `.env` — **nunca se commitea** (ya está en
 `.gitignore` y `.gcloudignore`).
 
+**`GOOGLE_OAUTH_CLIENT_SECRETS_FILE` es obligatoria en Cloud Run**, aunque el `.env.example` la
+marque como opcional: por default la app busca `client_secret_web.json` en la raíz del proyecto,
+pero en producción ese archivo viene montado desde Secret Manager en `/secrets/client_secret_web.json`
+(no en la raíz), así que hay que decirle explícitamente dónde está. Como `--env-vars-file`
+reemplaza todas las variables de entorno del servicio (no las combina con las que ya tenía),
+olvidarse esta línea rompe el login de Google en el próximo deploy.
+
 ### 2. Deployar
 
 ```bash
-gcloud run deploy linkedin-profile-analyzer --source . --region southamerica-east1 --service-account linkedin-analyzer-sa@udesa-analizador-perfiles.iam.gserviceaccount.com --env-vars-file .env.yaml --no-allow-unauthenticated
+gcloud run deploy linkedin-profile-analyzer --source . --region southamerica-east1 --service-account linkedin-analyzer-sa@udesa-analizador-perfiles.iam.gserviceaccount.com --env-vars-file .env.yaml
 ```
 
 (En `cmd.exe` de Windows no se puede usar `\` para cortar el comando en varias líneas como en
 bash; en PowerShell la continuación es con backtick `` ` ``. Más simple: ponerlo todo en una
 sola línea, como arriba.)
 
-### 3. Habilitar el acceso público al servicio (una sola vez por servicio)
+**No agregues `--allow-unauthenticated` ni `--no-allow-unauthenticated` a este comando.** Cada
+vez que se especifica alguna de las dos, gcloud sincroniza la política de IAM del servicio con
+esa flag — así que `--no-allow-unauthenticated` en un redeploy le sacaría el acceso público al
+servicio aunque ya se lo hubieras dado antes. Sin ninguna de las dos flags, gcloud deja la
+política de IAM tal cual está.
 
-`--no-allow-unauthenticated` bloquea el servicio a nivel de Cloud Run/IAM — nadie puede entrar,
-ni siquiera a `/auth/login`, sin un rol de IAM asignado a mano en el proyecto de GCP. Como el
-control de acceso real de esta app es el login de Google con `DOMINIO_PERMITIDO=udesa.edu.ar`
-(no IAM), hay que abrir el servicio a nivel de Cloud Run y dejar que la app filtre por dominio:
+### 3. Habilitar el acceso público al servicio (una sola vez, la primera vez)
+
+El control de acceso real de esta app es el login de Google con `DOMINIO_PERMITIDO=udesa.edu.ar`,
+no IAM de Google Cloud — así que el servicio de Cloud Run tiene que quedar abierto a nivel de
+IAM para que cualquiera pueda llegar a la pantalla de login, y de ahí para adelante la app filtra
+por dominio:
 
 ```bash
 gcloud run services add-iam-policy-binding linkedin-profile-analyzer --region southamerica-east1 --member="allUsers" --role="roles/run.invoker"
 ```
 
-Esto solo hace falta correrlo una vez (el permiso queda asociado al servicio, no se resetea en
-cada deploy).
+Esto solo hace falta correrlo una vez (el permiso queda asociado al servicio y los deploys
+posteriores no lo tocan, siempre que no uses `--allow-unauthenticated`/`--no-allow-unauthenticated`
+como se explica arriba).
 
 Notas:
 - Usá una cuenta de servicio con permisos sobre la carpeta de Drive, el spreadsheet, la
