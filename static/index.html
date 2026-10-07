@@ -192,7 +192,7 @@
   /* ---------- resumen final ---------- */
   .grid-resumen{
     display:grid;
-    grid-template-columns:repeat(4, 1fr);
+    grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));
     gap:14px;
     margin:20px 0;
   }
@@ -462,6 +462,10 @@
             <div class="num" id="res-amarillo">0</div>
             <div class="etiqueta">🟡 Amarillo</div>
           </div>
+          <div class="tarjeta-metrica rojo">
+            <div class="num" id="res-rojo">0</div>
+            <div class="etiqueta">🔴 Rojo</div>
+          </div>
         </div>
 
         <div class="links-resumen" id="links-resumen"></div>
@@ -539,6 +543,12 @@
 
 <script>
 const API = "";
+
+/* Escapa texto que viene de afuera (nombres de carreras, datos extraídos de PDFs, respuestas de la IA)
+   antes de meterlo en innerHTML, para que no pueda romper el HTML ni inyectar nada. */
+function esc(valor){
+  return String(valor ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
 
 /* ---------------- gate de login ---------------- */
 async function iniciarApp(){
@@ -632,7 +642,7 @@ async function poblarSelectCarreras(){
     const r = await apiFetch(`${API}/api/carreras`);
     const carreras = await r.json();
 
-    const opcion = c => `<option value="${c.nombre}">${c.nombre}${c.tiene_plan ? '' : ' (sin plan cargado)'}</option>`;
+    const opcion = c => `<option value="${esc(c.nombre)}">${esc(c.nombre)}${c.tiene_plan ? '' : ' (sin plan cargado)'}</option>`;
     const grado = carreras.filter(c => c.nivel !== 'posgrado');
     const posgrado = carreras.filter(c => c.nivel === 'posgrado');
 
@@ -674,7 +684,7 @@ document.getElementById('btn-iniciar').addEventListener('click', async () => {
 
     monitorearCorrida(d.run_id);
   }catch(e){
-    msg.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+    msg.innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
     btn.disabled = false;
     btn.textContent = 'Iniciar análisis';
   }
@@ -682,8 +692,18 @@ document.getElementById('btn-iniciar').addEventListener('click', async () => {
 
 function monitorearCorrida(runId){
   intervaloPolling = setInterval(async () => {
-    const r = await apiFetch(`${API}/api/pipeline/estado/${runId}`);
-    const d = await r.json();
+    let d;
+    try{
+      const r = await apiFetch(`${API}/api/pipeline/estado/${runId}`);
+      d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'No se pudo consultar el estado de la corrida.');
+    }catch(e){
+      // Corte de red, sesión vencida o el servidor se reinició (el estado de las corridas vive en
+      // memoria, así que una corrida en curso puede dejar de existir). No seguir consultando.
+      clearInterval(intervaloPolling);
+      terminarCorridaConError(e.message + ' Revisá la planilla de Sheets: si la corrida llegó a escribir, los datos ya están ahí.');
+      return;
+    }
 
     const logEl = document.getElementById('log-progreso');
     logEl.textContent = d.log.join('\n');
@@ -699,9 +719,30 @@ function monitorearCorrida(runId){
       mostrarResumen(d.resumen);
     } else if (d.estado === 'error'){
       clearInterval(intervaloPolling);
-      document.getElementById('texto-progreso').textContent = '❌ ' + (d.error || 'Ocurrió un error.');
+      terminarCorridaConError(d.error || 'Ocurrió un error.');
     }
   }, 2000);
+}
+
+/* Muestra el error y deja volver a la pantalla de lanzar (antes quedaba trabado hasta recargar). */
+function terminarCorridaConError(mensaje){
+  document.getElementById('texto-progreso').textContent = '❌ ' + mensaje;
+  const panel = document.getElementById('panel-progreso');
+  if (!panel.querySelector('.btn-volver-error')){
+    const btn = document.createElement('button');
+    btn.className = 'secundario btn-volver-error';
+    btn.style.marginTop = '14px';
+    btn.textContent = 'Volver';
+    btn.addEventListener('click', () => {
+      btn.remove();
+      panel.classList.add('oculto');
+      document.getElementById('panel-lanzar').classList.remove('oculto');
+      const iniciar = document.getElementById('btn-iniciar');
+      iniciar.disabled = false;
+      iniciar.textContent = 'Iniciar análisis';
+    });
+    panel.appendChild(btn);
+  }
 }
 
 function mostrarResumen(resumen){
@@ -715,21 +756,22 @@ function mostrarResumen(resumen){
   document.getElementById('res-analizados').textContent = resumen.analizados;
   document.getElementById('res-verde').textContent = resumen.conteo_semaforo.Verde || 0;
   document.getElementById('res-amarillo').textContent = resumen.conteo_semaforo.Amarillo || 0;
+  document.getElementById('res-rojo').textContent = resumen.conteo_semaforo.Rojo || 0;
 
   const links = document.getElementById('links-resumen');
   links.innerHTML = '';
   const etiquetas = {planilla: '📊 Ver planilla', carpeta_informes: '📁 Ver informes en Drive', presentacion_estadisticas: '📈 Ver estadísticas'};
   for (const [clave, url] of Object.entries(resumen.links || {})){
-    links.innerHTML += `<a href="${url}" target="_blank">${etiquetas[clave] || clave}</a>`;
+    links.innerHTML += `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(etiquetas[clave] || clave)}</a>`;
   }
 
   const tbody = document.getElementById('tabla-alumnos');
   tbody.innerHTML = (resumen.alumnos || []).map(a => `
     <tr>
-      <td>${a.url_perfil ? `<a href="${a.url_perfil}" target="_blank">${a.nombre}</a>` : a.nombre}</td>
-      <td>${a.carrera}</td>
-      <td>${a.puntaje}</td>
-      <td><span class="chip ${a.semaforo.toLowerCase()}">${a.semaforo}</span></td>
+      <td>${a.url_perfil && /^https?:\/\//i.test(a.url_perfil) ? `<a href="${esc(a.url_perfil)}" target="_blank" rel="noopener">${esc(a.nombre)}</a>` : esc(a.nombre)}</td>
+      <td>${esc(a.carrera)}</td>
+      <td>${esc(a.puntaje)}</td>
+      <td><span class="chip ${['verde','amarillo','rojo'].includes(String(a.semaforo).toLowerCase()) ? String(a.semaforo).toLowerCase() : ''}">${esc(a.semaforo)}</span></td>
     </tr>
   `).join('');
 }
@@ -771,10 +813,10 @@ function renderizarListaCarreras(){
     : carrerasCache.filter(c => (c.nivel || 'grado') === nivelFiltroActual);
 
   cont.innerHTML = carreras.map(c => `
-    <div class="fila-carrera" data-carrera="${c.nombre}">
+    <div class="fila-carrera" data-carrera="${esc(c.nombre)}">
       <div class="info">
-        <div class="nombre">${c.nombre}</div>
-        <div class="kw">${c.palabras_clave.join(', ')}</div>
+        <div class="nombre">${esc(c.nombre)}</div>
+        <div class="kw">${esc(c.palabras_clave.join(', '))}</div>
       </div>
       <span class="nivel-badge ${c.nivel || 'grado'}">${c.nivel === 'posgrado' ? 'Posgrado' : 'Grado'}</span>
       <span class="plan-badge ${c.tiene_plan ? 'si' : 'no'}">${c.tiene_plan ? 'Plan cargado' : 'Sin plan'}</span>
@@ -805,13 +847,13 @@ function renderizarListaCarreras(){
 
         const msg = document.getElementById('mensaje-carreras');
         if (d.requiere_revision_manual){
-          msg.innerHTML = `<div class="mensaje-error">Plan de '${nombre}' guardado, pero con el método '${d.metodo_usado}' — convendría revisarlo con "Ver / editar" antes de confiar en él del todo.</div>`;
+          msg.innerHTML = `<div class="mensaje-error">Plan de '${esc(nombre)}' guardado, pero con el método '${esc(d.metodo_usado)}' — convendría revisarlo con "Ver / editar" antes de confiar en él del todo.</div>`;
         } else {
-          msg.innerHTML = `<div class="mensaje-ok">Plan de '${nombre}' guardado correctamente (método: ${d.metodo_usado}, ${d.caracteres} caracteres).</div>`;
+          msg.innerHTML = `<div class="mensaje-ok">Plan de '${esc(nombre)}' guardado correctamente (método: ${esc(d.metodo_usado)}, ${d.caracteres} caracteres).</div>`;
         }
         cargarCarreras();
       }catch(e){
-        document.getElementById('mensaje-carreras').innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+        document.getElementById('mensaje-carreras').innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
         btn.textContent = 'Subir plan';
       }
     });
@@ -835,12 +877,15 @@ function renderizarListaCarreras(){
         if (!r.ok) throw new Error(d.detail || 'No se pudo cargar el plan.');
 
         editor.innerHTML = `
-          <textarea>${d.texto}</textarea>
+          <textarea></textarea>
           <div class="acciones">
             <button class="primario btn-guardar-plan">Guardar cambios</button>
             <button class="secundario btn-cancelar-plan">Cancelar</button>
           </div>
         `;
+
+        // .value en vez de interpolar en el HTML: así el texto del plan no puede romper el <textarea>.
+        editor.querySelector('textarea').value = d.texto;
 
         editor.querySelector('.btn-cancelar-plan').addEventListener('click', () => {
           editor.classList.add('oculto');
@@ -860,7 +905,7 @@ function renderizarListaCarreras(){
             const d2 = await r2.json();
             if (!r2.ok) throw new Error(d2.detail || 'No se pudo guardar.');
             document.getElementById('mensaje-carreras').innerHTML =
-              `<div class="mensaje-ok">Plan de '${nombre}' actualizado (${d2.caracteres} caracteres).</div>`;
+              `<div class="mensaje-ok">Plan de '${esc(nombre)}' actualizado (${d2.caracteres} caracteres).</div>`;
             editor.classList.add('oculto');
             editor.innerHTML = '';
           }catch(e){
@@ -869,7 +914,7 @@ function renderizarListaCarreras(){
           }
         });
       }catch(e){
-        editor.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+        editor.innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
       }
     });
 
@@ -901,12 +946,12 @@ document.getElementById('btn-agregar-carrera').addEventListener('click', async (
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'No se pudo guardar la carrera.');
 
-    msg.innerHTML = `<div class="mensaje-ok">Carrera '${nombre}' guardada como ${nivel === 'posgrado' ? 'posgrado' : 'grado'}. Ahora podés subirle el PDF del plan de estudios.</div>`;
+    msg.innerHTML = `<div class="mensaje-ok">Carrera '${esc(nombre)}' guardada como ${nivel === 'posgrado' ? 'posgrado' : 'grado'}. Ahora podés subirle el PDF del plan de estudios.</div>`;
     document.getElementById('input-nombre-carrera').value = '';
     document.getElementById('input-keywords-carrera').value = '';
     cargarCarreras();
   }catch(e){
-    msg.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+    msg.innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
   }
 });
 
@@ -942,7 +987,7 @@ document.getElementById('btn-iniciar-lote').addEventListener('click', async () =
     document.getElementById('progreso-lote').classList.remove('oculto');
     monitorearLotePlanes(d.lote_id);
   }catch(e){
-    msg.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+    msg.innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
   }finally{
     btn.disabled = false;
     btn.textContent = 'Extraer todos';
@@ -951,8 +996,17 @@ document.getElementById('btn-iniciar-lote').addEventListener('click', async () =
 
 function monitorearLotePlanes(loteId){
   intervaloPollingLote = setInterval(async () => {
-    const r = await apiFetch(`${API}/api/planes/lote/${loteId}`);
-    const d = await r.json();
+    let d;
+    try{
+      const r = await apiFetch(`${API}/api/planes/lote/${loteId}`);
+      d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'No se pudo consultar el estado de la carga.');
+    }catch(e){
+      clearInterval(intervaloPollingLote);
+      document.getElementById('mensaje-lote').innerHTML =
+        `<div class="mensaje-error">${esc(e.message)} Si el servidor se reinició, volvé a subir los PDF.</div>`;
+      return;
+    }
 
     const pct = d.total > 0 ? Math.round((d.procesados / d.total) * 100) : 0;
     document.getElementById('relleno-progreso-lote').style.width = pct + '%';
@@ -981,10 +1035,10 @@ function agregarFilaResultadoLote(res, indice){
   if (res.error){
     div.innerHTML = `
       <div class="cabecera-lote">
-        <span class="nombre-pdf">${res.pdf_original}</span>
+        <span class="nombre-pdf">${esc(res.pdf_original)}</span>
         <span class="chip rojo">error</span>
       </div>
-      <div class="mensaje-error" style="margin:0;">${res.error}</div>
+      <div class="mensaje-error" style="margin:0;">${esc(res.error)}</div>
     `;
     cont.appendChild(div);
     return;
@@ -993,17 +1047,17 @@ function agregarFilaResultadoLote(res, indice){
   const claseChip = res.requiere_revision_manual ? 'amarillo' : 'verde';
   const grado = carrerasCache.filter(c => (c.nivel || 'grado') !== 'posgrado');
   const posgrado = carrerasCache.filter(c => c.nivel === 'posgrado');
-  const opcionesGrado = grado.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
-  const opcionesPosgrado = posgrado.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+  const opcionesGrado = grado.map(c => `<option value="${esc(c.nombre)}">${esc(c.nombre)}</option>`).join('');
+  const opcionesPosgrado = posgrado.map(c => `<option value="${esc(c.nombre)}">${esc(c.nombre)}</option>`).join('');
 
   div.innerHTML = `
     <div class="cabecera-lote">
-      <span class="nombre-pdf">${res.pdf_original}</span>
-      <span class="chip ${claseChip}">${res.metodo_usado}</span>
+      <span class="nombre-pdf">${esc(res.pdf_original)}</span>
+      <span class="chip ${claseChip}">${esc(res.metodo_usado)}</span>
       <span class="caracteres-lote">${res.caracteres} caracteres</span>
       ${res.requiere_revision_manual ? '<span class="aviso-revision">⚠️ convendría revisar el texto antes de guardar</span>' : ''}
     </div>
-    <textarea class="texto-extraido-lote">${res.texto}</textarea>
+    <textarea class="texto-extraido-lote"></textarea>
     <div class="asignacion-lote">
       <label>Carrera de destino</label>
       <select class="select-destino-lote">
@@ -1012,7 +1066,7 @@ function agregarFilaResultadoLote(res, indice){
         ${opcionesPosgrado ? `<optgroup label="Posgrado">${opcionesPosgrado}</optgroup>` : ''}
       </select>
       <div class="campos-nueva-carrera-lote">
-        <input type="text" class="input-nombre-nueva-lote" placeholder="Nombre de la carrera" value="${res.nombre_sugerido}">
+        <input type="text" class="input-nombre-nueva-lote" placeholder="Nombre de la carrera" value="${esc(res.nombre_sugerido)}">
         <input type="text" class="input-keywords-nueva-lote" placeholder="Palabras clave, separadas por coma">
         <select class="select-nivel-nueva-lote">
           <option value="grado">Grado</option>
@@ -1024,6 +1078,7 @@ function agregarFilaResultadoLote(res, indice){
     <div class="mensaje-fila-lote"></div>
   `;
   cont.appendChild(div);
+  div.querySelector('.texto-extraido-lote').value = res.texto;
 
   const selectDestino = div.querySelector('.select-destino-lote');
   const camposNueva = div.querySelector('.campos-nueva-carrera-lote');
@@ -1071,12 +1126,12 @@ function agregarFilaResultadoLote(res, indice){
       const dPlan = await rPlan.json();
       if (!rPlan.ok) throw new Error(dPlan.detail || 'No se pudo guardar el plan.');
 
-      msgFila.innerHTML = `<div class="mensaje-ok">Guardado en '${nombreCarrera}' (${dPlan.caracteres} caracteres).</div>`;
+      msgFila.innerHTML = `<div class="mensaje-ok">Guardado en '${esc(nombreCarrera)}' (${dPlan.caracteres} caracteres).</div>`;
       btnGuardar.textContent = 'Guardado ✓';
       cargarCarreras();
       poblarSelectCarreras();
     }catch(e){
-      msgFila.innerHTML = `<div class="mensaje-error">${e.message}</div>`;
+      msgFila.innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
       btnGuardar.disabled = false;
       btnGuardar.textContent = 'Guardar';
     }

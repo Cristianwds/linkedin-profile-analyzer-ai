@@ -68,7 +68,14 @@ ID_PRESENTACION_STATS = os.getenv('ID_PRESENTACION_STATS')
 ID_CARPETA_PRESENTACIONES = os.getenv('ID_CARPETA_PRESENTACIONES')
 
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Timeout por llamada a cada proveedor de IA: sin esto, un proveedor que se cuelga (pasó con
+# NVIDIA) deja el pipeline entero esperando sin límite en vez de pasar al siguiente de la cadena.
+TIMEOUT_IA_SEGUNDOS = 90
+
+client = genai.Client(
+    api_key=GEMINI_API_KEY,
+    http_options=types.HttpOptions(timeout=TIMEOUT_IA_SEGUNDOS * 1000),  # en milisegundos
+)
 
 INSTRUCCIONES_SISTEMA = """
 Eres un Consultor Senior de Empleabilidad de la Universidad de San Andrés (UdeSA).
@@ -216,7 +223,7 @@ ESTRUCTURA EXACTA DEL JSON:
     "titular": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
     "ubicacion": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
     "url": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
-    "acerca_de": "acerca_de": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
+    "acerca_de": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
     "experiencia_laboral": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
     "educacion": {"estado": "Aprobado | A Mejorar", "comentario": "..."},
     "certificaciones": {"estado": "Aprobado | A Mejorar | No detectado", "comentario": "..."},
@@ -355,6 +362,7 @@ def extraer_texto_drive_en_memoria(servicio, file_id):
 
         return texto_completo, url_perfil
     except Exception as e:
+        print(f"   [⚠️ No se pudo descargar/leer el PDF {file_id}: {e}]")
         return None, None
 
 PATRON_URL_LINKEDIN = re.compile(
@@ -440,11 +448,12 @@ def mover_archivo_a_carpeta(servicio_drive, file_id, id_carpeta_destino, id_carp
 # después los proveedores gratuitos alternativos.
 ORDEN_PROVEEDORES = ["gemini", "groq", "nvidia"]
 
-cliente_groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+cliente_groq = Groq(api_key=GROQ_API_KEY, timeout=TIMEOUT_IA_SEGUNDOS) if GROQ_API_KEY else None
 
 cliente_nvidia = OpenAI(
     api_key=NVIDIA_API_KEY,
-    base_url="https://integrate.api.nvidia.com/v1"
+    base_url="https://integrate.api.nvidia.com/v1",
+    timeout=TIMEOUT_IA_SEGUNDOS,
 ) if NVIDIA_API_KEY else None
 
 # ==============================================================================
@@ -695,10 +704,35 @@ def detectar_carrera_por_keywords(texto_perfil):
         return None
 
     texto_normalizado = _normalizar_texto(texto_perfil)
+
+    # Se juntan TODAS las apariciones (carrera, inicio, fin) de cualquier keyword en el texto.
+    coincidencias = []
     for nombre_carrera, datos in CARRERAS_UDESA.items():
         for palabra_clave in datos["palabras_clave"]:
-            if _normalizar_texto(palabra_clave) in texto_normalizado:
-                return nombre_carrera
+            clave = _normalizar_texto(palabra_clave)
+            if not clave:
+                continue
+            inicio = texto_normalizado.find(clave)
+            while inicio != -1:
+                coincidencias.append((nombre_carrera, inicio, inicio + len(clave)))
+                inicio = texto_normalizado.find(clave, inicio + 1)
+
+    # Una keyword puede ser prefijo de la frase de OTRA carrera: "licenciatura en economia" aparece
+    # dentro de "Licenciatura en Economía Empresarial". Si dos coincidencias de carreras distintas
+    # se pisan en el texto, gana la que llega más lejos (la frase más completa); la otra era solo
+    # un pedazo de ésta. Entre coincidencias que NO se pisan se mantiene el orden del diccionario.
+    def _es_pedazo_de_otra(c1):
+        for c2 in coincidencias:
+            if c2[0] == c1[0]:
+                continue
+            se_pisan = c2[1] < c1[2] and c1[1] < c2[2]
+            if se_pisan and (c2[2] > c1[2] or (c2[2] == c1[2] and c2[1] < c1[1])):
+                return True
+        return False
+
+    for coincidencia in coincidencias:
+        if not _es_pedazo_de_otra(coincidencia):
+            return coincidencia[0]
     return None
 
 
@@ -756,7 +790,7 @@ def _llamar_nvidia(prompt):
     if not cliente_nvidia:
         raise RuntimeError("NVIDIA_API_KEY no configurada.")
     respuesta = cliente_nvidia.chat.completions.create(
-        model="deepseek-ai/deepseek-v4-flash-0731",
+        model="deepseek-ai/deepseek-v4.1-flash",  # el anterior (v4-flash-0731) fue dado de baja el 2026-09-21 (HTTP 410)
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         top_p=0.7,
@@ -776,8 +810,17 @@ ADAPTADORES = {
 }
 
 
-def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3):
-    """Reintenta un proveedor con backoff exponencial. Devuelve JSON parseado o None."""
+def _resumir_error(error, largo=160):
+    """Error de una API en una sola línea corta, para mostrarlo en el log de la web."""
+    texto = " ".join(str(error).split())
+    return texto if len(texto) <= largo else texto[:largo] + "…"
+
+
+def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3, avisar=print):
+    """Reintenta un proveedor con backoff exponencial. Devuelve JSON parseado o None.
+
+    avisar: función avisar(mensaje) para reportar reintentos y fallos. En consola es print; el
+    pipeline le pasa una que además lo manda al log de la web."""
     funcion = ADAPTADORES[nombre_proveedor]
 
     for intento in range(intentos_maximos):
@@ -789,31 +832,36 @@ def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3
 
             if _es_error_de_limite(error_msg):
                 espera = 2 ** (intento + 1)  # 2s, 4s, 8s...
-                print(f"   [⏳ {nombre_proveedor}: límite alcanzado. Reintento {intento+1}/{intentos_maximos} en {espera}s...]")
+                avisar(f"   [⏳ {nombre_proveedor}: límite o saturación ({_resumir_error(e, 100)}). "
+                       f"Reintento {intento+1}/{intentos_maximos} en {espera}s...]")
                 time.sleep(espera)
             else:
-                print(f"   [❌ {nombre_proveedor}: error irrecuperable → {e}]")
+                avisar(f"   [❌ {nombre_proveedor}: error irrecuperable → {_resumir_error(e)}]")
                 return None
 
-    print(f"   [❌ {nombre_proveedor}: se agotaron los reintentos.]")
+    avisar(f"   [❌ {nombre_proveedor}: se agotaron los reintentos (probablemente límite de cuota).]")
     return None
 
 
-def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None):
+def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar=print):
     """Orquestador: preclasificación de carrera → caché → Gemini → Groq → NVIDIA.
 
     carrera_cohorte: si se pasa (modo "cohorte completa"), pisa la detección automática por
     keywords para TODO el lote, avisando por consola si un perfil puntual no la menciona (no
-    se descarta el perfil, solo se informa la inconsistencia)."""
+    se descarta el perfil, solo se informa la inconsistencia).
+
+    avisar: función avisar(mensaje) para los mensajes importantes (avisos de cohorte, cuota
+    agotada, cambio de proveedor, fallo total). En consola es print; el pipeline le pasa una que
+    además los manda al log de la web."""
 
     carrera_detectada = detectar_carrera_por_keywords(texto_perfil)
 
     if carrera_cohorte:
         if carrera_detectada and carrera_detectada != carrera_cohorte:
-            print(f"   [⚠️ Este perfil menciona '{carrera_detectada}', pero se analiza como "
+            avisar(f"   [⚠️ Este perfil menciona '{carrera_detectada}', pero se analiza como "
                   f"'{carrera_cohorte}' (modo cohorte).]")
         elif not carrera_detectada:
-            print(f"   [⚠️ Este perfil no menciona ninguna carrera reconocida; se analiza "
+            avisar(f"   [⚠️ Este perfil no menciona ninguna carrera reconocida; se analiza "
                   f"igual como '{carrera_cohorte}' (modo cohorte).]")
         carrera_detectada = carrera_cohorte
 
@@ -840,16 +888,20 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None):
 
     prompt = f"{instrucciones_con_fecha}\n\nPERFIL DEL ESTUDIANTE:\n{texto_perfil}"
 
-    for proveedor in ORDEN_PROVEEDORES:
+    for indice_proveedor, proveedor in enumerate(ORDEN_PROVEEDORES):
         print(f"   [🔎 Analizando con: {proveedor}]")
-        resultado = _intentar_proveedor_con_backoff(proveedor, prompt)
+        resultado = _intentar_proveedor_con_backoff(proveedor, prompt, avisar=avisar)
         if resultado:
+            if indice_proveedor > 0:
+                # Que quede visible en la web que este perfil NO lo analizó el proveedor principal.
+                avisar(f"   [ℹ️ Este perfil se analizó con '{proveedor}' (el proveedor principal no respondió).]")
             CACHE_ANALISIS[hash_perfil] = resultado
             guardar_cache(CACHE_ANALISIS)
             return resultado
-        print(f"   [↪️ Pasando al siguiente proveedor tras fallo de {proveedor}...]")
+        if indice_proveedor + 1 < len(ORDEN_PROVEEDORES):
+            avisar(f"   [↪️ Pasando a '{ORDEN_PROVEEDORES[indice_proveedor + 1]}' tras fallo de {proveedor}...]")
 
-    print("   ❌ Ningún proveedor pudo analizar este perfil.")
+    avisar("   ❌ Ningún proveedor de IA pudo analizar este perfil.")
     return None
 
 # ==============================================================================
@@ -1801,7 +1853,10 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
 
         # Paso B: Mandar a la IA
         if texto:
-            analisis_json = analizar_perfil_con_ia(texto, fecha_hoy, carrera_cohorte)
+            # El mensaje sale al log de la web con el progreso actual (sin esto, _avisar lo
+            # reseteaba a 0 y la barra saltaba hacia atrás).
+            avisar_ia = lambda mensaje, _i=indice: _avisar(mensaje, _i - 1, total_pdfs)
+            analisis_json = analizar_perfil_con_ia(texto, fecha_hoy, carrera_cohorte, avisar=avisar_ia)
             if analisis_json:
                 analisis_json['url_perfil'] = url_perfil
                 if carrera_cohorte:
@@ -1824,12 +1879,17 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
                     if movido:
                         print(f"   📦 Movido a 'Analizados/{fecha_iso}'.")
             else:
-                print("   ⚠️ No se pudo analizar (fallaron los 3 proveedores). Queda en la carpeta original para reintentar.")
+                _avisar(f"⚠️ No se pudo analizar '{archivo['name']}' (fallaron todos los proveedores de IA, "
+                        "revisá el detalle de arriba). Queda en la carpeta original para reintentar.",
+                        indice, total_pdfs)
+        else:
+            _avisar(f"⚠️ No se pudo leer el texto de '{archivo['name']}' (¿PDF vacío, escaneado o sin permiso de lectura?). "
+                    "Se omite.", indice, total_pdfs)
 
         print("-" * 40)
 
     # PASO 3: Escribir en la hoja diaria y en el Histórico
-        servicio_sheets = construir_servicio_sheets(creds)
+    servicio_sheets = construir_servicio_sheets(creds)
     id_presentacion_generada = None
     if servicio_sheets and resultados_finales:
         nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)

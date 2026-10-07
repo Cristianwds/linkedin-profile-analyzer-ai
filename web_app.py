@@ -294,13 +294,12 @@ def iniciar_pipeline(body: IniciarPipelineBody, creds: Credentials = Depends(usu
     # Evita pisar una corrida que ya está en curso (el pipeline mueve archivos de Drive; correr
     # dos veces en simultáneo podría duplicar trabajo o pisarse) — esto aplica para todo el
     # servidor, no solo para esta persona, porque comparten la misma carpeta de Drive.
-    with RUNS_LOCK:
-        hay_corrida_activa = any(r["estado"] == "corriendo" for r in RUNS.values())
-    if hay_corrida_activa:
-        raise HTTPException(409, "Ya hay una corrida del pipeline en curso. Esperá a que termine.")
-
+    # El chequeo y el alta de la corrida van en el MISMO bloque con lock: si fueran dos bloques
+    # separados, dos clicks casi simultáneos podrían pasar los dos el chequeo y lanzar 2 corridas.
     run_id = str(uuid.uuid4())
     with RUNS_LOCK:
+        if any(r["estado"] == "corriendo" for r in RUNS.values()):
+            raise HTTPException(409, "Ya hay una corrida del pipeline en curso. Esperá a que termine.")
         RUNS[run_id] = _nueva_entrada_run(email)
 
     hilo = threading.Thread(
@@ -336,7 +335,13 @@ class PlanTextoBody(BaseModel):
 
 @app.get("/api/carreras")
 def listar_carreras(_creds: Credentials = Depends(usuario_actual)):
-    pipeline.recargar_carreras()
+    # recargar_carreras() vacía y vuelve a llenar CARRERAS_UDESA en el lugar; si hay una corrida
+    # en curso (que lee ese mismo dict desde otro hilo), podría verlo vacío a mitad de camino y
+    # no detectar la carrera de un perfil. Mientras corre el pipeline, no se recarga.
+    with RUNS_LOCK:
+        hay_corrida_activa = any(r["estado"] == "corriendo" for r in RUNS.values())
+    if not hay_corrida_activa:
+        pipeline.recargar_carreras()
     resultado = []
     for nombre, datos in pipeline.CARRERAS_UDESA.items():
         ruta_plan = pipeline.ruta_plan_de_estudios(datos)
@@ -370,7 +375,7 @@ def borrar_carrera(nombre: str, borrar_archivo_plan: bool = False, _creds: Crede
 
 
 @app.post("/api/carreras/{nombre}/plan")
-async def subir_plan_de_estudios(nombre: str, archivo: UploadFile = File(...), _creds: Credentials = Depends(usuario_actual)):
+def subir_plan_de_estudios(nombre: str, archivo: UploadFile = File(...), _creds: Credentials = Depends(usuario_actual)):
     """
     Sube el PDF oficial del plan de estudios de una carrera, lo procesa con la misma lógica de
     extraccion_plan_estudios.py (grilla por coordenadas → tablas por líneas → reordenamiento con
@@ -382,9 +387,13 @@ async def subir_plan_de_estudios(nombre: str, archivo: UploadFile = File(...), _
     if not archivo.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "El archivo tiene que ser un PDF.")
 
+    # Es un `def` común (no `async def`) a propósito: la extracción es CPU/IO bloqueante y puede
+    # tardar (incluye una llamada a la IA como último recurso). FastAPI corre los `def` en un
+    # thread aparte; con `async def` congelaría todo el servidor (login, polling del pipeline)
+    # hasta que termine.
     os.makedirs("/tmp/planes_subidos", exist_ok=True)
     ruta_temporal = f"/tmp/planes_subidos/{uuid.uuid4()}.pdf"
-    contenido = await archivo.read()
+    contenido = archivo.file.read()
     with open(ruta_temporal, "wb") as f:
         f.write(contenido)
 
@@ -551,10 +560,15 @@ def estado_sistema(_creds: Credentials = Depends(usuario_actual)):
         "ID_CARPETA_ANALIZADOS", "ID_PLANTILLA_INFORME", "GEMINI_API_KEY",
     ]
     faltantes = [v for v in variables_requeridas if not os.getenv(v)]
+    with RUNS_LOCK:
+        hay_corrida_activa = any(r["estado"] == "corriendo" for r in RUNS.values())
     return {
+        # Si llegó hasta acá, usuario_actual ya validó (y refrescó si hacía falta) el token de
+        # Google de esta persona. El frontend lo usa para el indicador "Google conectado".
+        "token_google_presente": True,
         "variables_env_faltantes": faltantes,
         "carreras_configuradas": len(pipeline.CARRERAS_UDESA),
-        "hay_corrida_activa": any(r["estado"] == "corriendo" for r in RUNS.values()),
+        "hay_corrida_activa": hay_corrida_activa,
     }
 
 

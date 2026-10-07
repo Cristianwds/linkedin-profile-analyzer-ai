@@ -11,4 +11,8 @@ COPY . .
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["sh", "-c", "uvicorn web_app:app --host 0.0.0.0 --port ${PORT}"]
+# --proxy-headers/--forwarded-allow-ips: Cloud Run termina el HTTPS en su proxy y le llega http al
+# contenedor; sin esto, request.url_for() arma el redirect_uri del login con http:// y Google lo
+# rechaza (redirect_uri_mismatch). Es seguro confiar en esos headers: al contenedor solo se llega
+# a través del front-end de Cloud Run.
+CMD ["sh", "-c", "uvicorn web_app:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]
