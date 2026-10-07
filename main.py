@@ -1114,9 +1114,12 @@ def _aplicar_negrita_observaciones(servicio_sheets, spreadsheet_id, sheet_id, fi
 
 def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, nombre_hoja):
     """
-    Agrega las filas del día a la hoja diaria (7 columnas: Apellido, Nombre, URL, Carrera,
-    Puntaje, Semáforo, Observación). Requiere que 'Plantilla' ya tenga la columna URL agregada
-    entre Nombre y Carrera.
+    Agrega las filas del día a la hoja diaria (14 columnas: Apellido, Nombre, URL, Carrera,
+    Puntaje, Semáforo, Observación, Estado Titular, Estado Url, Estado Acerca de,
+    Estado Experiencia, Estado Educación, Estado Certificaciones, Estado Aptitudes — mismas
+    7 columnas de estado por categoría que ya se escriben en Histórico). Requiere que
+    'Plantilla' ya tenga la columna URL agregada entre Nombre y Carrera, y las 7 columnas de
+    Estado agregadas después de Observación (mismos headers que Histórico).
     """
     print(f"\nEscribiendo datos en la hoja '{nombre_hoja}'...")
 
@@ -1129,13 +1132,20 @@ def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, no
             resultado.get('carrera_estudiante', 'No especificado'),
             resultado.get('puntaje_general', 0),
             resultado.get('color_semaforo', 'Error'),
-            _construir_texto_observacion(resultado)
+            _construir_texto_observacion(resultado),
+            _estado_categoria(resultado, 'titular'),
+            _estado_categoria(resultado, 'url'),
+            _estado_categoria(resultado, 'acerca_de'),
+            _estado_categoria(resultado, 'experiencia_laboral'),
+            _estado_categoria(resultado, 'educacion'),
+            _estado_categoria(resultado, 'certificaciones'),
+            _estado_categoria(resultado, 'aptitudes'),
         ]
         valores.append(fila)
 
     cuerpo = {'values': valores}
     # Rango con el nombre de hoja entre comillas simples: soporta nombres con espacios/tildes.
-    rango = f"'{nombre_hoja}'!A2:G"
+    rango = f"'{nombre_hoja}'!A2:N"   # antes era A2:G — ahora son 14 columnas, no 7
 
     try:
         resultado_append = servicio_sheets.spreadsheets().values().append(

@@ -96,14 +96,14 @@ from googleapiclient.discovery import build
 # CONFIGURACIÓN — AJUSTAR SI LOS HEADERS REALES DE LA HOJA SON DISTINTOS
 # ==============================================================================
 
-COLUMNA_SEMAFORO = "Semáforo general"
-COLUMNA_URL = "URL personalizado"
-COLUMNA_TITULAR = "Titular"
-COLUMNA_ACERCA_DE = "Acerca de"
-COLUMNA_EXPERIENCIA = "Experiencia laboral"
-COLUMNA_EDUCACION = "Educación"
-COLUMNA_CERTIFICACIONES = "Certificaciones"
-COLUMNA_APTITUDES = "Aptitudes"
+COLUMNA_SEMAFORO = "Semáforo (Estado)"
+COLUMNA_URL = "Estado Url"
+COLUMNA_TITULAR = "Estado Titular"
+COLUMNA_ACERCA_DE = "Estado Acerca de"
+COLUMNA_EXPERIENCIA = "Estado Experiencia"
+COLUMNA_EDUCACION = "Estado Educación"
+COLUMNA_CERTIFICACIONES = "Estado Certificaciones"
+COLUMNA_APTITUDES = "Estado Aptitudes"
 
 TOKENS_ESPERADOS = [
     "FECHA_CORRIDA", "CANT_ALUMNOS", "TITULO_PRESENTACION", "SUBTITULO_PRESENTACION",
@@ -560,7 +560,7 @@ if __name__ == "__main__":
     if not filas:
         raise SystemExit(f"No hay filas en la hoja '{hoja_de_prueba}' para calcular métricas.")
     print("Headers reales de la hoja:", list(filas[0].keys()))
-    
+
     generar_presentacion_stats(
         creds,
         filas,
