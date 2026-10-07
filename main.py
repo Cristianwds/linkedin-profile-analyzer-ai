@@ -28,6 +28,9 @@ from groq import Groq
 
 # Pagina web: https://linkedin-profile-analyzer-849635297315.southamerica-east1.run.app
 
+# Redeploy a Cloud Run (correrlo desde la raiz del proyecto, en una sola linea):
+# gcloud run deploy linkedin-profile-analyzer --source . --region southamerica-east1 --service-account linkedin-analyzer-sa@udesa-analizador-perfiles.iam.gserviceaccount.com --env-vars-file .env.yaml --max-instances 1 --no-cpu-throttling
+
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
 
