@@ -1838,10 +1838,10 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
     # Subcarpeta de 'Analizados' del día (se crea una sola vez si no existe).
     carpeta_analizados_hoy = None
     # Lo comento solo para seguir con las pruebas. Luego descomentar para que se muevan los perfiles
-    #if ID_CARPETA_ANALIZADOS:
-    #    carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
-    #        servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
-    #    )
+    if ID_CARPETA_ANALIZADOS:
+        carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
+            servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
+        )
 
     resultados_finales = []  # Aquí guardaremos todos los JSONs
 

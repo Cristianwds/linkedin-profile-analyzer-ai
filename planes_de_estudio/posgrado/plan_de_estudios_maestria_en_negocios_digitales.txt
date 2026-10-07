@@ -1,0 +1,64 @@
+Maestría en Negocios Digitales
+
+Nivelación (optativas)
+- Introducción a Indicadores Contables de Gestión
+- Introducción a Fundamentos Financieros
+
+Ejes obligatorios > Digital Business
+- Fundamentos de Tecnología, Apps Móviles e Internet de las cosas
+- Transformación Digital del Negocio
+- Diseño Centrado en las Personas
+- Agilidad
+- Estrategia en Negocios Digitales
+- Cyber Seguridad y Gobernanza
+- Marketing Digital
+- Digital Commerce
+
+Ejes obligatorios > Management
+- Finanzas en la Empresa
+- Intra/Entrepreneurship
+- Management Estratégico
+- Estrategia e Innovación
+- Indicadores para la Toma de Decisiones
+- Inversión y Financiamientos de Proyectos
+- Derecho en Negocios Digitales
+- Comportamiento Organizacional y Talento
+
+Ejes obligatorios > Data & IA
+- Data Analytics
+- Arquitectura de la Información: Big Data
+- Ciencia de Datos Iy II
+- Inteligencia Artificial
+
+Materias electivas (mínimo 6 materias) > Track Digital Business
+- Blockchain y Criptoactivos
+- Introducción a Python
+- Transformación Cultural
+- Design Thinking
+- UX
+
+Materias electivas (mínimo 6 materias) > Track Marketing & Comms
+- Comunicación Digital
+- Marketing Digital 2
+
+Materias electivas (mínimo 6 materias) > Track Tech
+- Arquitecturas de Soft ware y Agentes basados en LLMs
+- (*) El catálogo de materias electivas puede modificarse sin previo aviso.
+- Biotech
+- Fintech
+- Equipos de Alto Desempeño
+- Diseño de Futuros
+- Economía Circular
+- Escucha Activa
+- Neurociencias y Comunicación
+
+Materias electivas (mínimo 6 materias) > Track Management
+- Arquitecturas de Soft ware y Agentes basados en LLMs
+- (*) El catálogo de materias electivas puede modificarse sin previo aviso.
+- Biotech
+- Fintech
+- Equipos de Alto Desempeño
+- Diseño de Futuros
+- Economía Circular
+- Escucha Activa
+- Neurociencias y Comunicación

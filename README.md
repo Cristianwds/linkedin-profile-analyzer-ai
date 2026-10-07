@@ -53,10 +53,11 @@ Para cargar de golpe muchos PDFs de planes de estudio (por ejemplo, todo el cat�
 posgrados), sin pasar uno por uno por la web:
 
 ```bash
-python lote_extraccion_planes.py "pdfs_posgrado"
+python lote_extraccion_planes.py "pdfs_posgrado" --nivel posgrado
 ```
 
-Genera los `.txt` en `planes_de_estudio/<nivel>/` y un `manifiesto_planes.json` con el resultado
+Con `--nivel grado|posgrado` genera los `.txt` en `planes_de_estudio/<nivel>/` (sin ese flag los
+deja en `planes_de_estudio/` a secas), y además un `manifiesto_planes.json` con el resultado
 de cada archivo. El nombre del `.txt` de salida sale sin tildes ni espacios automáticamente
 (`Maestría en Finanzas.pdf` → `maestria_en_finanzas.txt`).
 

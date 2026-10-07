@@ -1,3 +1,9 @@
+LICENCIATURA EN FINANZAS
+
+La carrera ofrece dos orientaciones que permiten profundizar en distintos perfiles profesionales según los intereses de cada estudiante: Finanzas y Finanzas Cuantitativas.
+
+=== ORIENTACIÓN: FINANZAS ===
+
 PRIMER AÑO
 - Fundamentos Administración
 - Economía I
@@ -17,7 +23,6 @@ SEGUNDO AÑO
 - Programación Aplicada a Finanzas
 - Estadistica II
 - Electiva de Ciencias
-- MATERIAS OPTATIVAS Productos Estructurados
 
 TERCER AÑO
 - Derivados
@@ -50,3 +55,70 @@ QUINTO AÑO
 - Optativa IV
 - Administración Riesgos Financieros
 - Trabajo Final Graduación
+
+En el último año de la orientación Finanzas se puede elegir uno de los tres tracks de especialización: Inversiones, Finanzas Corporativas, Banca.
+
+=== ORIENTACIÓN: FINANZAS CUANTITATIVAS ===
+
+PRIMER AÑO
+- Fundamentos Administración
+- Economía I
+- Pensamiento Computacional
+- Introducción al razonamiento matemático
+- Análisis y Planificación Financiera
+- Derechos Fundamentales
+- Cálculo I
+- Algebra
+
+SEGUNDO AÑO
+- Renta Fija
+- Electiva de Filosofía
+- Calculo II
+- Estadística I
+- Cálculo numérico aplicado a Finanzas
+- Cálculo III
+- Electiva de Ciencias
+- Estadística II
+
+TERCER AÑO
+- Derivados
+- Analisis Avanzado
+- Teoría del Portafolio
+- Ecuaciones Diferenciales y Sistemas Dinámicos
+- Finanzas Corporativas
+- Estrategias de Trading
+- Programacion Dinamica y Metodos de Simulacion
+- Teoria de la Medida y Probabilidad
+
+CUARTO AÑO
+- Productos Estructurados
+- Ciencia de Datos y Aprendizaje Automático
+- Calculo Estocástico Aplicado a Finanzas
+- Econometría
+- Electiva de Historia
+- Valuación Acciones
+- Administracion de Cartera
+- Matemática Financiera
+- Pronósiticos Financieros
+
+QUINTO AÑO
+- Ingeniería Financiera
+- Optativa I
+- Escritura y Oratoria
+- Optativa II
+- Teoria Financiera de la Valuación
+- Optativa III
+- Optativa IV
+- Administración Riesgos Financieros
+- Trabajo Final Graduación
+
+=== MATERIAS OPTATIVAS (ambas orientaciones) ===
+- Productos Estructurados
+- Administración de Carteras
+- Machine Learning para Finanzas
+- Trading Algoritimico
+- Ingeniería Financiera II
+- Econometría Avanzada
+- Entrepreneurial Finance
+- Tópicos en Finanzas Corporativas
+- Valuación por opciones reales

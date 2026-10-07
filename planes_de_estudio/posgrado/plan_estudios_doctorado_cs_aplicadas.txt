@@ -1,0 +1,11 @@
+Doctorado en Ciencias Aplicadas
+El plan de estudios es semi-estructurado, esto quiere decir que se organiza en un ciclo principal con materias obligatorias y un ciclo orientado al desarrollo de la tesis individual.
+
+Ciclo principal
+- Análisis estadístico de datos
+- Modelado y simulación computacional
+- Taller de Tesis
+- Seminario permanente de investigación
+
+Ciclo orientado
+- Materias y Seminarios de temática optativa

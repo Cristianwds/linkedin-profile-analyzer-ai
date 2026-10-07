@@ -1,18 +1,141 @@
 [
   {
+    "pdf_original": "Plan de Estudios - MBA Salud.pdf",
+    "archivo_txt": "plan_de_estudios_mba_salud.txt",
+    "nombre_sugerido": "Plan De Estudios   Mba Salud",
+    "metodo_usado": "manual",
+    "caracteres": 1992,
+    "requiere_revision_manual": false
+  },
+  {
+    "pdf_original": "Plan de Estudios - Maestria en Finanzas.pdf",
+    "archivo_txt": "plan_de_estudios_maestria_en_finanzas.txt",
+    "nombre_sugerido": "Plan De Estudios   Maestria En Finanzas",
+    "metodo_usado": "posgrado",
+    "caracteres": 1857,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
+    "pdf_original": "Plan de Estudios - Maestria en Marketing (1).pdf",
+    "archivo_txt": "plan_de_estudios_maestria_en_marketing_1.txt",
+    "nombre_sugerido": "Plan De Estudios   Maestria En Marketing (1)",
+    "metodo_usado": "posgrado",
+    "caracteres": 2552,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
+    "pdf_original": "Plan de Estudios - Maestria en Recursos Humanos.pdf",
+    "archivo_txt": "plan_de_estudios_maestria_en_recursos_humanos.txt",
+    "nombre_sugerido": "Plan De Estudios   Maestria En Recursos Humanos",
+    "metodo_usado": "posgrado",
+    "caracteres": 3009,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
+    "pdf_original": "Plan de Estudios - Master in Business & Technology (1).pdf",
+    "archivo_txt": "plan_de_estudios_master_in_business_technology_1.txt",
+    "nombre_sugerido": "Plan De Estudios   Master In Business & Technology (1)",
+    "metodo_usado": "manual",
+    "caracteres": 1386,
+    "requiere_revision_manual": false
+  },
+  {
+    "pdf_original": "Plan-de-Estudios-Maestria-OSFL.pdf",
+    "archivo_txt": "plan_de_estudios_maestria_osfl.txt",
+    "nombre_sugerido": "Plan De Estudios Maestria Osfl",
+    "metodo_usado": "grilla",
+    "caracteres": 1297,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
+    "pdf_original": "doctorado-dba-udesa.pdf",
+    "archivo_txt": "doctorado_dba_udesa.txt",
+    "nombre_sugerido": "Doctorado Dba Udesa",
+    "metodo_usado": "grilla",
+    "caracteres": 1111,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
     "pdf_original": "plan-de-estudios-EMBA.pdf",
     "archivo_txt": "plan_de_estudios_emba.txt",
     "nombre_sugerido": "Plan De Estudios Emba",
-    "metodo_usado": "crudo",
-    "caracteres": 2927,
-    "requiere_revision_manual": true
+    "metodo_usado": "manual",
+    "caracteres": 2954,
+    "requiere_revision_manual": false
+  },
+  {
+    "pdf_original": "plan-de-estudios-maestria-en-negocios-digitales.pdf",
+    "archivo_txt": "plan_de_estudios_maestria_en_negocios_digitales.txt",
+    "nombre_sugerido": "Plan De Estudios Maestria En Negocios Digitales",
+    "metodo_usado": "posgrado",
+    "caracteres": 1793,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
+    "pdf_original": "plan-de-estudios-maestria-inteligencia-artificial.pdf",
+    "archivo_txt": "plan_de_estudios_maestria_inteligencia_artificial.txt",
+    "nombre_sugerido": "Plan De Estudios Maestria Inteligencia Artificial",
+    "metodo_usado": "posgrado-narrativo",
+    "caracteres": 687,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
+    "pdf_original": "plan-de-estudios-master-in-management.pdf",
+    "archivo_txt": "plan_de_estudios_master_in_management.txt",
+    "nombre_sugerido": "Plan De Estudios Master In Management",
+    "metodo_usado": "posgrado",
+    "caracteres": 6378,
+    "requiere_revision_manual": false,
+    "error": null
   },
   {
     "pdf_original": "plan-de-estudios-mba.pdf",
     "archivo_txt": "plan_de_estudios_mba.txt",
     "nombre_sugerido": "Plan De Estudios Mba",
-    "metodo_usado": "crudo",
-    "caracteres": 2503,
-    "requiere_revision_manual": true
+    "metodo_usado": "manual",
+    "caracteres": 2495,
+    "requiere_revision_manual": false
+  },
+  {
+    "pdf_original": "plan-de-estudios-mcc.pdf",
+    "archivo_txt": "plan_de_estudios_mcc.txt",
+    "nombre_sugerido": "Plan De Estudios Mcc",
+    "metodo_usado": "posgrado-narrativo",
+    "caracteres": 1315,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
+    "pdf_original": "plan-de-estudios-mcgfl.pdf",
+    "archivo_txt": "plan_de_estudios_mcgfl.txt",
+    "nombre_sugerido": "Plan De Estudios Mcgfl",
+    "metodo_usado": "posgrado",
+    "caracteres": 1206,
+    "requiere_revision_manual": false,
+    "error": null
+  },
+  {
+    "pdf_original": "plan-de-estudios-mib.pdf",
+    "archivo_txt": "plan_de_estudios_mib.txt",
+    "nombre_sugerido": "Plan De Estudios Mib",
+    "metodo_usado": "manual",
+    "caracteres": 2563,
+    "requiere_revision_manual": false
+  },
+  {
+    "pdf_original": "plan-estudios-doctorado-cs-aplicadas.pdf",
+    "archivo_txt": "plan_estudios_doctorado_cs_aplicadas.txt",
+    "nombre_sugerido": "Plan Estudios Doctorado Cs Aplicadas",
+    "metodo_usado": "posgrado-narrativo",
+    "caracteres": 421,
+    "requiere_revision_manual": false,
+    "error": null
   }
 ]

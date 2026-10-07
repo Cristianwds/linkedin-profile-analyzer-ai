@@ -23,12 +23,15 @@ actualiza incrementalmente entre corridas: los PDFs saltados conservan la entrad
 en la que efectivamente se procesaron, no se pierden ni se vuelven a listar como "sin procesar".
 
 USO:
-    python lote_extraccion_planes.py "ruta/a/la/carpeta/con/pdfs"
+    python lote_extraccion_planes.py "ruta/a/la/carpeta/con/pdfs" [--nivel grado|posgrado]
 
 Ejemplo:
-    python lote_extraccion_planes.py "pdfs_posgrado"
+    python lote_extraccion_planes.py "pdfs_posgrado" --nivel posgrado
 
 Flags opcionales:
+    --nivel X     'grado' o 'posgrado': guarda los .txt en planes_de_estudio/X/ (donde los busca
+                  el pipeline) y mira ahí para decidir qué PDFs ya fueron extraídos. Sin este
+                  flag se usa planes_de_estudio/ a secas, como antes.
     --con-crudo   Igual que en extraccion_plan_estudios.py: agrega al final de cada .txt el
                   texto completo extraído del PDF sin procesar, como referencia.
     --forzar      Reprocesa TODOS los PDFs de la carpeta, incluso los que ya tienen un .txt
@@ -137,7 +140,7 @@ def procesar_un_pdf(ruta_pdf, nombre_pdf, incluir_texto_crudo=False, callback_av
     }
 
 
-def procesar_carpeta(carpeta_pdfs, incluir_texto_crudo=False, forzar=False):
+def procesar_carpeta(carpeta_pdfs, incluir_texto_crudo=False, forzar=False, nivel=None):
     if not os.path.isdir(carpeta_pdfs):
         print(f"❌ No se encontró la carpeta: {carpeta_pdfs}")
         sys.exit(1)
@@ -157,7 +160,8 @@ def procesar_carpeta(carpeta_pdfs, incluir_texto_crudo=False, forzar=False):
     saltados = []
     for nombre_pdf in archivos_pdf:
         archivo_txt = _slug_desde_nombre_pdf(nombre_pdf)
-        ruta_txt = os.path.join(extractor.CARPETA_DESTINO, archivo_txt)
+        carpeta_txt = os.path.join(extractor.CARPETA_DESTINO, nivel) if nivel else extractor.CARPETA_DESTINO
+        ruta_txt = os.path.join(carpeta_txt, archivo_txt)
         if os.path.exists(ruta_txt) and not forzar:
             saltados.append(nombre_pdf)
         else:
@@ -194,7 +198,7 @@ def procesar_carpeta(carpeta_pdfs, incluir_texto_crudo=False, forzar=False):
             print("-" * 60)
             continue
 
-        ruta_guardada = extractor.guardar_txt(resultado["texto"], resultado["archivo_txt"])
+        ruta_guardada = extractor.guardar_txt(resultado["texto"], resultado["archivo_txt"], subcarpeta=nivel)
         print(f"    ✅ Guardado en: {ruta_guardada} (método: {resultado['metodo_usado']}, "
               f"{resultado['caracteres']} caracteres)")
         print("-" * 60)
@@ -217,11 +221,33 @@ def procesar_carpeta(carpeta_pdfs, incluir_texto_crudo=False, forzar=False):
 if __name__ == "__main__":
     incluir_texto_crudo = '--con-crudo' in sys.argv
     forzar = '--forzar' in sys.argv
-    argumentos = [a for a in sys.argv[1:] if a not in ('--con-crudo', '--forzar')]
 
-    if len(argumentos) != 1:
-        print("Uso: python lote_extraccion_planes.py <carpeta_con_pdfs> [--con-crudo] [--forzar]")
-        print('Ejemplo: python lote_extraccion_planes.py "pdfs_posgrado"')
+    # --nivel acepta tanto "--nivel posgrado" como "--nivel=posgrado".
+    nivel = None
+    resto = []
+    argv = sys.argv[1:]
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == '--nivel' and i + 1 < len(argv):
+            nivel = argv[i + 1]
+            i += 2
+            continue
+        if a.startswith('--nivel='):
+            nivel = a.split('=', 1)[1]
+        else:
+            resto.append(a)
+        i += 1
+
+    argumentos = [a for a in resto if a not in ('--con-crudo', '--forzar')]
+
+    if nivel is not None and nivel not in ('grado', 'posgrado'):
+        print("❌ --nivel tiene que ser 'grado' o 'posgrado'.")
         sys.exit(1)
 
-    procesar_carpeta(argumentos[0], incluir_texto_crudo, forzar)
+    if len(argumentos) != 1:
+        print("Uso: python lote_extraccion_planes.py <carpeta_con_pdfs> [--nivel grado|posgrado] [--con-crudo] [--forzar]")
+        print('Ejemplo: python lote_extraccion_planes.py "pdfs_posgrado" --nivel posgrado')
+        sys.exit(1)
+
+    procesar_carpeta(argumentos[0], incluir_texto_crudo, forzar, nivel)

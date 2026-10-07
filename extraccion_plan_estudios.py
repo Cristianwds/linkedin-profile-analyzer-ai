@@ -972,9 +972,12 @@ def reordenar_con_ia(texto_crudo):
 # GUARDADO Y CLI
 # ==============================================================================
 
-def guardar_txt(texto, nombre_archivo):
-    os.makedirs(CARPETA_DESTINO, exist_ok=True)
-    ruta_salida = os.path.join(CARPETA_DESTINO, nombre_archivo)
+def guardar_txt(texto, nombre_archivo, subcarpeta=None):
+    """Guarda el .txt en planes_de_estudio/ o, si se pasa subcarpeta ('grado' / 'posgrado'), en
+    planes_de_estudio/<subcarpeta>/ (que es donde los busca main.ruta_plan_de_estudios)."""
+    carpeta = os.path.join(CARPETA_DESTINO, subcarpeta) if subcarpeta else CARPETA_DESTINO
+    os.makedirs(carpeta, exist_ok=True)
+    ruta_salida = os.path.join(carpeta, nombre_archivo)
     with open(ruta_salida, 'w', encoding='utf-8') as f:
         f.write(texto)
     return ruta_salida
