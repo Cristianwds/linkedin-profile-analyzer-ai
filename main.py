@@ -927,7 +927,9 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar
         if resultado:
             if indice_proveedor > 0:
                 # Que quede visible en la web que este perfil NO lo analizó el proveedor principal.
-                avisar(f"   [ℹ️ Este perfil se analizó con '{proveedor}' (el proveedor principal no respondió).]")
+                # ⚠️ (no ℹ️) para que salga en el recuadro de avisos del resumen: los proveedores
+                # alternativos no puntúan igual que Gemini, conviene saber qué perfiles analizaron.
+                avisar(f"   [⚠️ Este perfil se analizó con '{proveedor}' (el proveedor principal no respondió).]")
             CACHE_ANALISIS[hash_perfil] = resultado
             guardar_cache(CACHE_ANALISIS)
             return resultado
@@ -1598,8 +1600,9 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
     """
     Genera el informe de un alumno copiando la plantilla de Google Docs, reemplazando los
     placeholders {{...}} por la información analizada por la IA, y exportando el resultado a
-    PDF — el Doc editable intermedio se usa solo como paso interno y se borra al final; en
-    Drive queda únicamente el PDF (conversión de Google, sin costo de IA).
+    PDF (conversión de Google, sin costo de IA). El PDF queda en la carpeta de la carrera, y el
+    Doc editable se guarda en su subcarpeta 'Docs informes', por si hay que corregir algo a mano
+    y volver a exportarlo.
 
     servicio_docs se recibe ya armado (construir_servicio_docs(creds), una sola vez por corrida
     del pipeline) en vez de autenticarse de nuevo por cada alumno.
@@ -1665,9 +1668,9 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
         else:
             avisar(f"   ⚠️ El documento de {nombre} {apellido} se creó, pero no se pudo completar la información.")
 
-        # 5. Exportamos el Doc ya completado a PDF, lo subimos a la misma carpeta, y borramos
-        #    el Doc editable intermedio — en Drive solo queda el PDF final.
-        id_pdf = _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino, avisar=avisar)
+        # 5. Exportamos el Doc ya completado a PDF, lo subimos a la misma carpeta, y guardamos
+        #    el Doc editable aparte, en 'Docs informes'.
+        id_pdf = _exportar_doc_a_pdf_y_archivar_doc(servicio_drive, doc_id, nombre_documento, id_carpeta_destino, avisar=avisar)
         if id_pdf:
             print(f"✅ Informe guardado en Drive como PDF (ID: {id_pdf}).")
             return id_pdf
@@ -1680,22 +1683,27 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
         return None
 
 
-def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, id_carpeta_destino, avisar=print):
+def _exportar_doc_a_pdf_y_archivar_doc(servicio_drive, doc_id, nombre_documento, id_carpeta_destino, avisar=print):
     """
     Exporta un Google Doc ya completado a PDF (conversión de Google, sin costo de IA), sube ese
-    PDF a la misma carpeta, y borra el Doc editable intermedio.
+    PDF a la misma carpeta, y mueve el Doc editable a la subcarpeta 'Docs informes', para que
+    quede a mano si hay que corregir algo y volver a exportarlo.
 
-    Las 3 etapas (exportar, subir, borrar) están separadas en try/except independientes a
-    propósito: si falla exportar o subir, no hay PDF real todavía, así que se devuelve None y el
-    Doc original queda como respaldo. Pero si falla el BORRADO del Doc viejo (después de que el
+    Las 3 etapas (exportar, subir, archivar el Doc) están separadas en try/except independientes
+    a propósito: si falla exportar o subir, no hay PDF real todavía, así que se devuelve None y el
+    Doc queda en la carpeta principal como respaldo. Pero si falla mover el Doc (después de que el
     PDF ya se subió con éxito), eso NO es una falla real del resultado — el PDF ya existe en
-    Drive — así que se devuelve igual el ID del PDF, solo con un aviso de que quedó un Doc
-    sobrante sin borrar.
+    Drive — así que se devuelve igual el ID del PDF, solo con un aviso de que el Doc quedó junto
+    al PDF.
 
-    Reintenta la descarga del export, y también el borrado final, con backoff: el Doc se acaba
-    de crear/editar (files().copy + batchUpdate) y a veces la API de Drive tarda unos segundos en
-    "verlo" desde export_media o delete — más notorio en Unidades Compartidas —, lo que devuelve
-    un 404 "File not found" pasajero aunque el archivo exista.
+    Antes el Doc se intentaba BORRAR (3 intentos con espera) y solo se movía a 'Docs informes' si
+    el borrado fallaba por falta de permiso: el resultado dependía de los permisos de quien
+    corriera el pipeline, y cada informe perdía unos segundos en reintentos.
+
+    Reintenta la descarga del export con backoff: el Doc se acaba de crear/editar (files().copy +
+    batchUpdate) y a veces la API de Drive tarda unos segundos en "verlo" desde export_media — más
+    notorio en Unidades Compartidas —, lo que devuelve un 404 "File not found" pasajero aunque el
+    archivo exista.
     """
     intentos_maximos = 4
     for intento in range(intentos_maximos):
@@ -1735,46 +1743,26 @@ def _exportar_doc_a_pdf_y_reemplazar(servicio_drive, doc_id, nombre_documento, i
         ).execute()
         id_pdf = pdf_creado.get('id')
     except Exception as e:
-        # Acá sí es una falla real: no llegamos a tener el PDF. El Doc original queda intacto
-        # como respaldo (no se intentó borrar todavía).
+        # Acá sí es una falla real: no llegamos a tener el PDF. El Doc queda en la carpeta
+        # principal como respaldo.
         avisar(f"   [⚠️ El PDF se exportó pero falló al subirlo a Drive: {e}]")
         return None
 
-    # c. Recién ahora que el PDF quedó CONFIRMADO en Drive, borramos el Doc intermedio — con el
-    # mismo tipo de reintento que el export, y en un bloque SEPARADO a propósito. Si TODOS los
-    # reintentos fallan, el PDF real ya existe y ya es un ÉXITO: no hay que reportarlo como si
-    # todo el proceso hubiera fallado, ni devolver None (eso escondería el PDF bueno detrás de un
-    # mensaje de error y el caller pensaría que hay que usar el Doc viejo como respaldo). Lo único
-    # que queda pendiente es un Doc editable sin borrar en Drive — molesto, pero no es pérdida de
-    # información.
-    intentos_borrado = 3
-    borrado_exitoso = False
-    for intento in range(intentos_borrado):
-        try:
-            servicio_drive.files().delete(fileId=doc_id, supportsAllDrives=True).execute()
-            borrado_exitoso = True
-            break
-        except Exception as e:
-            if intento < intentos_borrado - 1:
-                espera = 2 * (intento + 1)  # 2s, 4s...
-                avisar(f"   [⏳ Borrado del Doc intermedio: '{e}'. Reintento {intento + 1}/{intentos_borrado - 1} en {espera}s...]")
-                time.sleep(espera)
-            else:
-                avisar(f"   [ℹ️ No se pudo borrar el Doc intermedio (ID: {doc_id}) tras {intentos_borrado} intentos "
-                       f"— probablemente falta permiso de borrado en esa Unidad Compartida: {e}]")
+    # c. Recién ahora que el PDF quedó CONFIRMADO en Drive, movemos el Doc editable a
+    # 'Docs informes', en un bloque SEPARADO a propósito: si falla, el PDF ya existe y es un
+    # ÉXITO — no hay que devolver None (el caller pensaría que hay que usar el Doc como respaldo).
+    detalle = ""
+    try:
+        carpeta_docs = obtener_o_crear_subcarpeta(servicio_drive, id_carpeta_destino, "Docs informes")
+        movido = mover_archivo_a_carpeta(servicio_drive, doc_id, carpeta_docs, id_carpeta_destino)
+    except Exception as e:
+        movido = False
+        detalle = f" ({_resumir_error(e)})"
 
-    # Si no se pudo borrar (falta de permiso, no timing), no lo dejamos suelto mezclado con el
-    # PDF final: lo movemos a una subcarpeta aparte dentro de la misma carpeta de destino, para
-    # poder limpiarlos en batch el día que se ajuste el permiso de borrado en Drive.
-    if not borrado_exitoso:
-        carpeta_docs_residuales = obtener_o_crear_subcarpeta(
-            servicio_drive, id_carpeta_destino, "Docs informes"
-        )
-        movido = mover_archivo_a_carpeta(servicio_drive, doc_id, carpeta_docs_residuales, id_carpeta_destino)
-        if movido:
-            avisar(f"   [📦 Doc intermedio (ID: {doc_id}) movido a 'Docs informes'.]")
-        else:
-            avisar(f"   [⚠️ Tampoco se pudo mover el Doc intermedio (ID: {doc_id}) — quedó junto al PDF final.]")
+    if movido:
+        print(f"   [📦 Doc editable (ID: {doc_id}) guardado en 'Docs informes'.]")
+    else:
+        avisar(f"   [⚠️ No se pudo mover el Doc editable (ID: {doc_id}) a 'Docs informes': quedó junto al PDF{detalle}.]")
 
     return id_pdf
 
@@ -1851,14 +1839,18 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
     # que usan todos los mensajes de problema del pipeline: ⚠️ = aviso, ❌ = error.
     problemas = []
 
-    def _avisar(mensaje, procesados=None, total=None):
+    def _avisar(mensaje, procesados=None, total=None, perfil=None):
+        """perfil: nombre del PDF al que se refiere el mensaje, para los que no lo dicen solos
+        (los de la IA, como "Este perfil se analizó con 'groq'"). Solo se agrega en el recuadro
+        de avisos: en el log ya se ve, porque el "Procesando: <archivo>" aparece justo antes."""
         print(mensaje)
         if procesados is not None:
             progreso["procesados"] = procesados
         if total is not None:
             progreso["total"] = total
         if "⚠️" in mensaje or "❌" in mensaje:
-            problemas.append(mensaje.strip().strip("[]").strip())
+            texto = mensaje.strip().strip("[]").strip()
+            problemas.append(f"{texto} — {perfil}" if perfil else texto)
         if callback_progreso:
             callback_progreso(mensaje, progreso["procesados"], progreso["total"])
 
@@ -1907,7 +1899,10 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
 
         # Paso B: Mandar a la IA
         if texto:
-            analisis_json = analizar_perfil_con_ia(texto, fecha_hoy, carrera_cohorte, avisar=_avisar)
+            analisis_json = analizar_perfil_con_ia(
+                texto, fecha_hoy, carrera_cohorte,
+                avisar=lambda mensaje: _avisar(mensaje, perfil=archivo['name'])
+            )
             if analisis_json:
                 analisis_json['url_perfil'] = url_perfil
                 if carrera_cohorte:
