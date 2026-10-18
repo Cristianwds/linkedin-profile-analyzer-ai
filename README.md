@@ -92,6 +92,7 @@ ID_CARPETA: "id_carpeta_origen_pdfs"
 ID_CARPETA_INFORMES: "id_carpeta_destino_informes"
 ID_CARPETA_ANALIZADOS: "id_carpeta_pdfs_analizados"
 ID_PLANTILLA_INFORME: "id_Informe_modelo"
+ID_PRESENTACION_MASTER_STATS: "id_de_Plantilla_DP_version3"
 ID_PRESENTACION_STATS: "tu_id_de_presentacion"
 ID_CARPETA_PRESENTACIONES: "id_carpeta_destino_presentaciones"
 GEMINI_API_KEY: "tu_api_key_de_gemini"
@@ -161,6 +162,9 @@ Notas:
 
 ```
 main.py                        # pipeline principal (Drive -> IA -> Sheets/Docs/Slides)
+generar_presentacion_stats.py  # presentación de estadísticas del día, desde la plantilla
+                               #   ID_PRESENTACION_MASTER_STATS (para probarla sola:
+                               #   python generar_presentacion_stats.py <hoja_del_dia>)
 web_app.py                     # backend FastAPI que envuelve el pipeline para la web
 static/index.html              # frontend del panel (sin build step)
 extraccion_plan_estudios.py    # utilidad para convertir el PDF de un plan de estudios a .txt

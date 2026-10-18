@@ -89,6 +89,7 @@ from googleapiclient.discovery import build
 # CONFIGURACIÓN — AJUSTAR SI LOS HEADERS REALES DE LA HOJA SON DISTINTOS
 # ==============================================================================
 
+COLUMNA_CARRERA = "Carrera"
 COLUMNA_SEMAFORO = "Semáforo (Estado)"
 COLUMNA_URL = "Estado Url"
 COLUMNA_TITULAR = "Estado Titular"
@@ -211,6 +212,17 @@ def calcular_metricas_del_dia(filas):
         "APTITUDES_MEJORAR_PCT": _porcentaje_entero(contar(COLUMNA_APTITUDES, "A Mejorar"), total),
         "APTITUDES_NODETECTADO_PCT": _porcentaje_entero(contar(COLUMNA_APTITUDES, "No detectado"), total),
     }
+
+
+def subtitulo_desde_filas(filas):
+    """Subtítulo de la portada según las carreras del día: el nombre si es una sola (una cohorte),
+    "Perfiles de N carreras" si son varias, o vacío si la columna no tiene datos."""
+    carreras = {str(fila.get(COLUMNA_CARRERA, "")).strip() for fila in filas} - {""}
+    if len(carreras) == 1:
+        return carreras.pop()
+    if carreras:
+        return f"Perfiles de {len(carreras)} carreras"
+    return ""
 
 
 def formatear_tokens_texto(metricas, fecha_iso, titulo_presentacion, subtitulo_presentacion):
@@ -648,5 +660,5 @@ if __name__ == "__main__":
         filas,
         fecha_iso=hoja_de_prueba,
         nombre_archivo=f"PRUEBA — Estadísticas DP — {hoja_de_prueba}",
-        subtitulo_presentacion="Corrida de prueba del generador de presentaciones",
+        subtitulo_presentacion=subtitulo_desde_filas(filas),
     )

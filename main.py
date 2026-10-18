@@ -7,6 +7,7 @@ import time
 import hashlib
 import unicodedata
 import almacenamiento_estado
+import generar_presentacion_stats as presentacion_stats
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -61,12 +62,15 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
 
-# ID_PRESENTACION_STATS ahora es la PLANTILLA de estadísticas: sus gráficos vinculados se
-# refrescan en cada corrida y, a partir de ese estado, se genera una COPIA nueva en
-# ID_CARPETA_PRESENTACIONES (una presentación por corrida, no se pisan entre sí — mismo patrón
-# que ID_PLANTILLA_INFORME con los informes individuales). Si ID_CARPETA_PRESENTACIONES no está
-# configurada, el pipeline sigue funcionando igual que antes: solo refresca la plantilla en el
-# lugar, sin generar copias.
+# Presentación de estadísticas de cada día. ID_PRESENTACION_MASTER_STATS es la plantilla actual
+# (Plantilla_DP_version3): generar_presentacion_stats.py la copia a ID_CARPETA_PRESENTACIONES
+# como "Estadísticas DP — <fecha>" y le carga los números, barras y anillos del día con formas
+# nativas (ver generar_presentacion_del_dia).
+#
+# ID_PRESENTACION_STATS es la plantilla VIEJA, con gráficos vinculados a la planilla: solo se usa
+# como respaldo si ID_PRESENTACION_MASTER_STATS no está configurada (refresca sus gráficos y deja
+# una copia congelada por corrida en ID_CARPETA_PRESENTACIONES/<fecha>).
+ID_PRESENTACION_MASTER_STATS = os.getenv('ID_PRESENTACION_MASTER_STATS')
 ID_PRESENTACION_STATS = os.getenv('ID_PRESENTACION_STATS')
 ID_CARPETA_PRESENTACIONES = os.getenv('ID_CARPETA_PRESENTACIONES')
 
@@ -1578,6 +1582,40 @@ def desvincular_graficos_slides(servicio_slides, id_presentacion, avisar=print):
         avisar(f"   [⚠️ No se pudieron desvincular los gráficos de la copia (quedó con los gráficos "
                f"vinculados: si alguien les da 'Actualizar', van a cambiar): {_resumir_error(e)}]")
 
+
+def generar_presentacion_del_dia(creds, servicio_sheets, nombre_hoja_hoy, fecha_iso, avisar=print):
+    """
+    Genera "Estadísticas DP — <fecha>" a partir de la plantilla ID_PRESENTACION_MASTER_STATS, con
+    TODAS las filas de la hoja del día (no solo las de esta corrida): es una presentación por día,
+    y si el pipeline corre de nuevo el mismo día, la anterior se manda a la papelera y se regenera
+    con todo lo del día (ver generar_presentacion_stats.duplicar_o_reemplazar_presentacion_del_dia).
+
+    El subtítulo dice la carrera si el día tiene una sola, o cuántas carreras hay si son varias.
+    Cualquier error se avisa y devuelve None: la presentación no tiene que frenar los informes.
+    """
+    if not ID_CARPETA_PRESENTACIONES:
+        avisar("⚠️ No está configurada ID_CARPETA_PRESENTACIONES: no se generó la presentación de estadísticas.")
+        return None
+    try:
+        filas = presentacion_stats.leer_filas_hoja_como_diccionarios(servicio_sheets, ID_SPREADSHEET, nombre_hoja_hoy)
+        if not filas:
+            avisar(f"⚠️ La hoja '{nombre_hoja_hoy}' quedó sin filas: no se generó la presentación de estadísticas.")
+            return None
+        id_presentacion, _ = presentacion_stats.generar_presentacion_stats(
+            creds,
+            filas,
+            fecha_iso=fecha_iso,
+            subtitulo_presentacion=presentacion_stats.subtitulo_desde_filas(filas),
+            id_master=ID_PRESENTACION_MASTER_STATS,
+            carpeta_destino_id=ID_CARPETA_PRESENTACIONES,
+            avisar=avisar,
+        )
+        avisar(f"✅ Presentación de estadísticas del día generada ({len(filas)} perfiles).")
+        return id_presentacion
+    except Exception as e:
+        avisar(f"❌ No se pudo generar la presentación de estadísticas: {_resumir_error(e)}")
+        return None
+
 # ==============================================================================
 # MÓDULO 4: GOOGLE DOCS (Generación de Informes a partir de Plantilla)
 # ==============================================================================
@@ -2009,28 +2047,35 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
                                   nombre_hoja_historico, avisar=_avisar)
 
         actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy, avisar=_avisar)
-        servicio_slides = construir_servicio_slides(creds) if ID_PRESENTACION_STATS else None
-        if ID_PRESENTACION_STATS and not servicio_slides:
-            _avisar("⚠️ No se pudo conectar con Google Slides: no se actualizó la presentación de estadísticas.")
-        if servicio_slides:
-            refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS, avisar=_avisar)
-            if ID_CARPETA_PRESENTACIONES:
-                carpeta_presentaciones_hoy = obtener_o_crear_subcarpeta(
-                    servicio_drive, ID_CARPETA_PRESENTACIONES, fecha_iso
-                )
-                nombre_presentacion = f"Estadísticas_{hoy.strftime('%Y-%m-%d_%H%M')}"
-                id_presentacion_generada = generar_copia_presentacion_estadisticas(
-                    servicio_drive, ID_PRESENTACION_STATS, carpeta_presentaciones_hoy, nombre_presentacion,
-                    avisar=_avisar
-                )
-                if id_presentacion_generada:
-                    # OJO: se desvincula la COPIA (id_presentacion_generada), NUNCA la plantilla
-                    # (ID_PRESENTACION_STATS) — la plantilla tiene que seguir vinculada para que
-                    # refrescar_graficos_slides() funcione en la próxima corrida.
-                    desvincular_graficos_slides(servicio_slides, id_presentacion_generada, avisar=_avisar)
+
+        if ID_PRESENTACION_MASTER_STATS:
+            id_presentacion_generada = generar_presentacion_del_dia(
+                creds, servicio_sheets, nombre_hoja_hoy, fecha_iso, avisar=_avisar
+            )
+        elif ID_PRESENTACION_STATS:
+            # Respaldo: plantilla vieja con gráficos vinculados (ver ID_PRESENTACION_STATS arriba).
+            servicio_slides = construir_servicio_slides(creds)
+            if not servicio_slides:
+                _avisar("⚠️ No se pudo conectar con Google Slides: no se actualizó la presentación de estadísticas.")
             else:
-                print("   [ℹ️ ID_CARPETA_PRESENTACIONES no está configurada: se actualizó la plantilla "
-                      "en el lugar, sin generar una copia nueva para esta corrida.]")
+                refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS, avisar=_avisar)
+                if ID_CARPETA_PRESENTACIONES:
+                    carpeta_presentaciones_hoy = obtener_o_crear_subcarpeta(
+                        servicio_drive, ID_CARPETA_PRESENTACIONES, fecha_iso
+                    )
+                    nombre_presentacion = f"Estadísticas_{hoy.strftime('%Y-%m-%d_%H%M')}"
+                    id_presentacion_generada = generar_copia_presentacion_estadisticas(
+                        servicio_drive, ID_PRESENTACION_STATS, carpeta_presentaciones_hoy, nombre_presentacion,
+                        avisar=_avisar
+                    )
+                    if id_presentacion_generada:
+                        # OJO: se desvincula la COPIA (id_presentacion_generada), NUNCA la plantilla
+                        # (ID_PRESENTACION_STATS) — la plantilla tiene que seguir vinculada para que
+                        # refrescar_graficos_slides() funcione en la próxima corrida.
+                        desvincular_graficos_slides(servicio_slides, id_presentacion_generada, avisar=_avisar)
+                else:
+                    print("   [ℹ️ ID_CARPETA_PRESENTACIONES no está configurada: se actualizó la plantilla "
+                          "en el lugar, sin generar una copia nueva para esta corrida.]")
 
     # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
     servicio_docs = construir_servicio_docs(creds) if ID_PLANTILLA_INFORME and resultados_finales else None
