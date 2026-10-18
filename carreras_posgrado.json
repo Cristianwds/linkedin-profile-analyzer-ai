@@ -1,1 +1,103 @@
-{}
+{
+  "Maestría en Finanzas": {
+    "palabras_clave": [
+      "maestría en finanzas"
+    ],
+    "archivo_plan": "plan_de_estudios_maestria_en_finanzas.txt"
+  },
+  "Maestría en Marketing": {
+    "palabras_clave": [
+      "maestría en marketing"
+    ],
+    "archivo_plan": "plan_de_estudios_maestria_en_marketing_1.txt"
+  },
+  "Maestría en Recursos Humanos": {
+    "palabras_clave": [
+      "maestría en recursos humanos"
+    ],
+    "archivo_plan": "plan_de_estudios_maestria_en_recursos_humanos.txt"
+  },
+  "Maestría en Negocios Digitales": {
+    "palabras_clave": [
+      "maestría en negocios digitales"
+    ],
+    "archivo_plan": "plan_de_estudios_maestria_en_negocios_digitales.txt"
+  },
+  "Maestría en Inteligencia Artificial": {
+    "palabras_clave": [
+      "maestría en inteligencia artificial"
+    ],
+    "archivo_plan": "plan_de_estudios_maestria_inteligencia_artificial.txt"
+  },
+  "Maestría en Ciencias del Comportamiento": {
+    "palabras_clave": [
+      "maestría en ciencias del comportamiento"
+    ],
+    "archivo_plan": "plan_de_estudios_mcc.txt"
+  },
+  "Maestría en Dirección de Organizaciones sin Fines de Lucro": {
+    "palabras_clave": [
+      "maestría en dirección de organizaciones sin fines de lucro",
+      "maestría en osfl"
+    ],
+    "archivo_plan": "plan_de_estudios_maestria_osfl.txt"
+  },
+  "Master in Business & Technology": {
+    "palabras_clave": [
+      "master in business & technology",
+      "master in business and technology"
+    ],
+    "archivo_plan": "plan_de_estudios_master_in_business_technology_1.txt"
+  },
+  "Master in Management": {
+    "palabras_clave": [
+      "master in management"
+    ],
+    "archivo_plan": "plan_de_estudios_master_in_management.txt"
+  },
+  "Master in Business Innovation": {
+    "palabras_clave": [
+      "master in business innovation"
+    ],
+    "archivo_plan": "plan_de_estudios_mib.txt"
+  },
+  "Master in Corporate Governance, Finance & Law": {
+    "palabras_clave": [
+      "master in corporate governance"
+    ],
+    "archivo_plan": "plan_de_estudios_mcgfl.txt"
+  },
+  "MBA": {
+    "palabras_clave": [
+      "master in business administration"
+    ],
+    "archivo_plan": "plan_de_estudios_mba.txt"
+  },
+  "EMBA": {
+    "palabras_clave": [
+      "executive mba",
+      "executive master in business administration"
+    ],
+    "archivo_plan": "plan_de_estudios_emba.txt"
+  },
+  "MBA Salud": {
+    "palabras_clave": [
+      "mba salud",
+      "mba en salud"
+    ],
+    "archivo_plan": "plan_de_estudios_mba_salud.txt"
+  },
+  "Doctorado en Administración de Negocios (DBA)": {
+    "palabras_clave": [
+      "doctorado en administración de negocios",
+      "doctor of business administration"
+    ],
+    "archivo_plan": "doctorado_dba_udesa.txt"
+  },
+  "Doctorado en Ciencias Aplicadas": {
+    "palabras_clave": [
+      "doctorado en ciencias aplicadas"
+    ],
+    "archivo_plan": "plan_estudios_doctorado_cs_aplicadas.txt"
+  }
+}

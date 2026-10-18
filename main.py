@@ -28,6 +28,9 @@ from groq import Groq
 
 # Pagina web: https://linkedin-profile-analyzer-849635297315.southamerica-east1.run.app
 
+# Redeploy a Cloud Run (correrlo desde la raiz del proyecto, en una sola linea):
+# gcloud run deploy linkedin-profile-analyzer --source . --region southamerica-east1 --service-account linkedin-analyzer-sa@udesa-analizador-perfiles.iam.gserviceaccount.com --env-vars-file .env.yaml --max-instances 1 --no-cpu-throttling
+
 # Cargar las variables de entorno desde el archivo .env
 load_dotenv()
 
@@ -1889,10 +1892,10 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
     # Subcarpeta de 'Analizados' del día (se crea una sola vez si no existe).
     carpeta_analizados_hoy = None
     # Lo comento solo para seguir con las pruebas. Luego descomentar para que se muevan los perfiles
-    #if ID_CARPETA_ANALIZADOS:
-    #    carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
-    #        servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
-    #    )
+    if ID_CARPETA_ANALIZADOS:
+        carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
+            servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
+        )
 
     resultados_finales = []  # Aquí guardaremos todos los JSONs
 

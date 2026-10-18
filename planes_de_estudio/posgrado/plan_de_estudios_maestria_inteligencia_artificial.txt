@@ -1,0 +1,24 @@
+Maestría en Inteligencia Artificial
+
+Fundamentos matemáticos
+- Optimización
+- Probabilidad y estadística
+- Modelado estocástico
+- Teoría de la información
+
+Inteligencia Artificial • Procesamiento de lenguaje natural y Machine Learning
+- Machine Learning
+- Deep Learning
+- Visión y percepción computarizada
+- Sistemas autónomos y aprendizaje por refuerzos
+- Ética y problemáticas de la IA
+
+Programación e Informática
+- Herramientas de programación e informática
+- Algoritmos y estructuras de datos para la IA
+- Ingeniería de Software y de Datos
+- Inteligencia Artificial en Producción
+
+Trabajo final y desarrollo profesional
+- Taller de trabajo final
+- Seminarios y talleres profesionales

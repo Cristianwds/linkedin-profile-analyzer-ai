@@ -1,0 +1,50 @@
+Maestría en Finanzas
+
+Materias obligatorias
+- Finanzas Corporativas y Manejo de Tesorería
+- Estadística con Aplicación de Modelos Computacionales
+- Gestión y Estrategia en el Mercado de Bonos
+- Valuación de Activos Financieros
+- Futuros, Opciones y Swaps
+- Valuación de Participaciones Accionarias
+- Administración de Carteras de Inversión
+- Estructura de Capital y Estrategia Financiera
+- Macroeconomía Financiera
+- Taller de Trabajo Final
+
+Materias electivas
+- Administración de Riesgos Financieros
+- Tópicos de Finanzas: Debates en la Macroeconomía Internacional
+- Operaciones de Cobertura en Mercados Financieros de Agronegocios
+- Economía y Política Monetaria
+- Modelos Financieros y Algoritmos
+- Ética en las Finanzas: Criterios profesionales para la toma de decisiones.
+- Finanzas Corporativas Internacionales
+- Fusiones y Adquisiciones
+- Gestión de activos y pasivos
+- Métodos no paramétricos
+- Microestructura de mercado
+- Métodos Dinámicos en Matemática Financiera
+- Python para Finanzas
+- Redes Neuronales y algoritmos
+- Valuación de Participaciones Accionarias II
+- Administración y carteras de inversión
+- Negociación y Arquitectura Legal de Contratos
+- Prácticas Avanzadas de Análisis Técnico
+- Data Science aplicado a Finanzas
+- Banca de Inversión
+- Python para Finanzas II
+- Análisis Técnico II
+- Estrategia de posicionamiento en mercados internacionales y locales
+- Productos Estructurados y Securitización
+- Derivados y el Aumento de Valor de la Empresa
+- Productos Estructurados y Derivados de Renta Fija
+- Riesgo de Créditos
+- Administración de Carteras II
+- Contabilidad Financiera
+- Inversión en Activos de Valor
+- Simulación de Escenarios en Finanzas
+- Valuación de IPOs y LBOs
+- Deals con derivados: cobertura, arbitraje y aumento de valor
+- Valuación Financiera y Modelos de Negocios
+- Análisis y Estrategias de Renta Fija Argentina
