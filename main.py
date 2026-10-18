@@ -20,9 +20,12 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from groq import Groq
 
-# Activacion del venv antes de ejecutar: venv\Scripts\activate
+# Activacion del venv antes de ejecutar: source venv/bin/activate (en Windows: venv\Scripts\activate)
 
 # ejecucion del codigo en bash: python main.py
+
+# probar una presentacion de estadisticas sin correr el pipeline:
+# python generar_presentacion_stats.py <desde> [<hasta>] [--carrera ...] [--modo Cohorte|Mixto]
 
 # ejecucion para pagina web: uvicorn web_app:app --reload --port 8080
 # Abrir http://localhost:8080

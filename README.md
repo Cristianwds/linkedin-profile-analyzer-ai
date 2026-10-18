@@ -11,7 +11,7 @@ equipo pueda correr el pipeline y gestionar carreras/planes de estudio sin usar 
 
 ```bash
 python -m venv venv
-venv\Scripts\activate        # Windows
+source venv/bin/activate     # Linux/Mac (en Windows: venv\Scripts\activate)
 pip install -r requirements.txt
 cp .env.example .env         # completar con los IDs y API keys reales
 python main.py
@@ -131,8 +131,12 @@ olvidarse esta línea rompe el login de Google en el próximo deploy.
 ### 2. Deployar
 
 ```bash
-gcloud run deploy linkedin-profile-analyzer --source . --region southamerica-east1 --service-account linkedin-analyzer-sa@udesa-analizador-perfiles.iam.gserviceaccount.com --env-vars-file .env.yaml
+gcloud run deploy linkedin-profile-analyzer --source . --region southamerica-east1 --service-account linkedin-analyzer-sa@udesa-analizador-perfiles.iam.gserviceaccount.com --env-vars-file .env.yaml --max-instances 1 --no-cpu-throttling
 ```
+
+`--max-instances 1` porque el estado de las corridas vive en memoria del proceso (ver notas más
+abajo), y `--no-cpu-throttling` para que el análisis siga corriendo en segundo plano después de
+que la página recibe la respuesta.
 
 (En `cmd.exe` de Windows no se puede usar `\` para cortar el comando en varias líneas como en
 bash; en PowerShell la continuación es con backtick `` ` ``. Más simple: ponerlo todo en una
