@@ -1,0 +1,16 @@
+# Configuración de Ruff (el linter que usa la extensión de VS Code).
+#
+# Desde la versión 0.17, Ruff activa por defecto muchas reglas de estilo (orden de imports,
+# `except Exception` "demasiado amplio", sintaxis nueva de anotaciones de tipos...) que este
+# proyecto no sigue a propósito: por ejemplo, el pipeline atrapa excepciones amplias para seguir
+# con el resto de los perfiles en vez de cortar toda la corrida. Nos quedamos con las reglas que
+# detectan errores reales: pyflakes (F: imports y variables sin usar, nombres no definidos) y los
+# errores básicos de pycodestyle (E4, E7, E9).
+[lint]
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# Imports a mitad de archivo a propósito: main.py agrupa los del login en su propia sección, y
+# pru.py tiene que cargar el .env antes de importar main.
+"main.py" = ["E402"]
+"pru.py" = ["E402"]
