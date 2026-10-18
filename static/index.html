@@ -89,7 +89,7 @@
   .punto.ok{background:var(--menta);}
   .punto.mal{background:#ff9d8a;}
 
-  main{flex:1; padding:36px 44px; max-width:1080px;}
+  main{flex:1; min-width:0; padding:36px 44px; max-width:1080px;}
   h1{font-size:1.5rem; margin:0 0 4px;}
   .lead{color:var(--texto-tenue); margin:0 0 28px; font-size:.95rem;}
 
@@ -221,6 +221,16 @@
   .caja-avisos ul{margin:8px 0 0; padding-left:18px; max-height:220px; overflow-y:auto; color:var(--texto);}
   .caja-avisos li{margin-bottom:4px;}
   details.detalle-log summary{cursor:pointer; font-size:.85rem; font-weight:600; color:var(--azul);}
+  .paso-actual{font-size:.85rem; color:var(--texto-tenue); min-height:1.2em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+  .bloque-uso-ia{border:1px solid var(--borde); border-radius:8px; padding:14px 16px; margin-bottom:20px; font-size:.88rem;}
+  .bloque-uso-ia h3{font-size:.95rem; margin:0 0 8px;}
+  .bloque-uso-ia .promedio{font-size:1.3rem; font-weight:700; color:var(--azul);}
+  .bloque-uso-ia ul{margin:8px 0 0; padding-left:18px;}
+  .bloque-uso-ia li{margin-bottom:3px;}
+  .bloque-uso-ia .ok{color:var(--verde); font-weight:600; margin-top:8px;}
+  .bloque-uso-ia .alerta{color:var(--amarillo); font-weight:600; margin-top:8px;}
+  .bloque-uso-ia .error{color:var(--rojo); font-weight:600; margin-top:4px;}
 
   .links-resumen{display:flex; gap:10px; flex-wrap:wrap; margin:6px 0 20px;}
   .links-resumen a{
@@ -450,7 +460,12 @@
         <h2>Corriendo…</h2>
         <div class="estado-linea" id="texto-progreso">Iniciando…</div>
         <div class="barra-progreso"><div class="relleno" id="relleno-progreso"></div></div>
-        <div class="log" id="log-progreso"></div>
+        <div class="paso-actual" id="paso-actual"></div>
+        <!-- El detalle técnico queda plegado: al final se muestra un resumen ordenado. -->
+        <details class="detalle-log" id="detalle-log-progreso" style="margin-top:14px;">
+          <summary>Ver detalle técnico</summary>
+          <div class="log" id="log-progreso" style="margin-top:10px;"></div>
+        </details>
       </div>
 
       <div class="panel oculto" id="panel-resumen">
@@ -483,12 +498,16 @@
 
         <div class="links-resumen" id="links-resumen"></div>
 
-        <table>
-          <thead>
-            <tr><th>Estudiante</th><th>Carrera</th><th>Puntaje</th><th>Semáforo</th></tr>
-          </thead>
-          <tbody id="tabla-alumnos"></tbody>
-        </table>
+        <div id="uso-ia-resumen"></div>
+
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr><th>Estudiante</th><th>Carrera</th><th>Puntaje</th><th>Semáforo</th><th>IA</th><th>Tokens</th></tr>
+            </thead>
+            <tbody id="tabla-alumnos"></tbody>
+          </table>
+        </div>
 
         <details class="detalle-log" style="margin-top:18px;">
           <summary>Ver el log completo de la corrida</summary>
@@ -723,9 +742,11 @@ function monitorearCorrida(runId){
       return;
     }
 
+    // El log completo va al detalle plegado; a la vista solo queda el paso actual.
     const logEl = document.getElementById('log-progreso');
     logEl.textContent = d.log.join('\n');
     logEl.scrollTop = logEl.scrollHeight;
+    document.getElementById('paso-actual').textContent = pasoActual(d.log);
 
     const pct = d.total > 0 ? Math.round((d.procesados / d.total) * 100) : 0;
     document.getElementById('relleno-progreso').style.width = pct + '%';
@@ -742,9 +763,20 @@ function monitorearCorrida(runId){
   }, 2000);
 }
 
+/* Último paso "de primer nivel" del log (Procesando: x.pdf…, Generando documento…): los detalles
+   del pipeline vienen con sangría y quedan solo en el detalle técnico. */
+function pasoActual(log){
+  for (let i = log.length - 1; i >= 0; i--){
+    const linea = String(log[i]).replace(/^\n+/, '');
+    if (linea.trim() && !/^\s/.test(linea)) return linea;
+  }
+  return '';
+}
+
 /* Muestra el error y deja volver a la pantalla de lanzar (antes quedaba trabado hasta recargar). */
 function terminarCorridaConError(mensaje){
   document.getElementById('texto-progreso').textContent = '❌ ' + mensaje;
+  document.getElementById('detalle-log-progreso').open = true;  // ante un error, el detalle sí sirve
   const panel = document.getElementById('panel-progreso');
   if (!panel.querySelector('.btn-volver-error')){
     const btn = document.createElement('button');
@@ -777,6 +809,7 @@ function mostrarResumen(resumen, log){
     ? `<div class="caja-avisos"><strong>⚠️ ${avisos.length} aviso(s) o error(es) durante la corrida.</strong> Revisalos antes de dar la corrida por buena:<ul>${avisos.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>`
     : '';
   document.getElementById('log-resumen').textContent = (log || []).join('\n');
+  document.getElementById('uso-ia-resumen').innerHTML = renderizarUsoIA(resumen.uso_ia);
 
   document.getElementById('res-total').textContent = resumen.total_pdfs;
   document.getElementById('res-analizados').textContent = resumen.analizados;
@@ -798,8 +831,60 @@ function mostrarResumen(resumen, log){
       <td>${esc(a.carrera)}</td>
       <td>${esc(a.puntaje)}</td>
       <td><span class="chip ${['verde','amarillo','rojo'].includes(String(a.semaforo).toLowerCase()) ? String(a.semaforo).toLowerCase() : ''}">${esc(a.semaforo)}</span></td>
+      <td>${esc(nombreIA(a.ia, a.ia_original))}</td>
+      <td>${a.tokens != null ? esc(formatearNumero(a.tokens)) : '—'}</td>
     </tr>
   `).join('');
+}
+
+const NOMBRES_IA = {gemini: 'Gemini', groq: 'Groq', nvidia: 'NVIDIA'};
+
+function formatearNumero(n){
+  return Number(n).toLocaleString('es-AR');
+}
+
+/* 'caché' significa que el perfil ya se había analizado antes con el mismo contenido: no se
+   llamó a ninguna IA. Si se sabe quién lo había analizado, se aclara entre paréntesis. */
+function nombreIA(ia, iaOriginal){
+  if (!ia) return '—';
+  if (ia === 'caché') return iaOriginal ? `Caché (${NOMBRES_IA[iaOriginal] || iaOriginal})` : 'Caché';
+  return NOMBRES_IA[ia] || ia;
+}
+
+function renderizarUsoIA(uso){
+  if (!uso) return '';
+  const proveedores = Object.entries(uso.por_proveedor || {});
+  if (!proveedores.length && !uso.sin_analizar) return '';
+
+  let html = '<div class="bloque-uso-ia"><h3>🤖 Uso de IA</h3>';
+  if (uso.promedio_tokens_por_perfil != null){
+    html += `<div><span class="promedio">${esc(formatearNumero(uso.promedio_tokens_por_perfil))}</span> tokens por perfil, en promedio
+      <span style="color:var(--texto-tenue)">(${uso.perfiles_con_tokens} perfil(es) analizados con IA · ${esc(formatearNumero(uso.tokens_totales))} tokens en total)</span></div>`;
+  }
+
+  html += '<ul>' + proveedores.map(([proveedor, datos]) => {
+    if (proveedor === 'caché'){
+      return `<li><strong>Caché</strong>: ${datos.perfiles} perfil(es) ya analizados antes, sin gastar tokens</li>`;
+    }
+    const tokens = datos.promedio_tokens != null
+      ? ` · ${esc(formatearNumero(datos.tokens))} tokens (${esc(formatearNumero(datos.promedio_tokens))} por perfil)`
+      : ' · el proveedor no informó tokens';
+    return `<li><strong>${esc(NOMBRES_IA[proveedor] || proveedor)}</strong>: ${datos.perfiles} perfil(es)${tokens}</li>`;
+  }).join('') + '</ul>';
+
+  const fallos = Object.entries(uso.fallos_por_proveedor || {});
+  if (!fallos.length){
+    html += '<div class="ok">✅ Ninguna IA se quedó sin cuota.</div>';
+  }
+  for (const [proveedor, conteo] of fallos){
+    const nombre = esc(NOMBRES_IA[proveedor] || proveedor);
+    if (conteo.cuota) html += `<div class="alerta">⚠️ ${nombre} se quedó sin cuota o estuvo saturada en ${conteo.cuota} perfil(es).</div>`;
+    if (conteo.error) html += `<div class="error">❌ ${nombre} dio error en ${conteo.error} perfil(es).</div>`;
+  }
+  if (uso.sin_analizar){
+    html += `<div class="error">❌ ${uso.sin_analizar} perfil(es) no los pudo analizar ninguna IA (quedan en Drive para reintentar).</div>`;
+  }
+  return html + '</div>';
 }
 
 document.getElementById('btn-nueva-corrida').addEventListener('click', () => {

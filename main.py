@@ -793,6 +793,26 @@ def _es_error_de_limite(error):
     return any(frase in error_msg for frase in FRASES_ERROR_LIMITE)
 
 
+# Cada adaptador devuelve (texto, uso): uso son los tokens de la llamada como
+# {'entrada', 'salida', 'total'}, o None si el proveedor no los informó. Sirven para el resumen
+# de uso de IA de cada corrida (promedio de tokens por perfil, ver _resumir_uso_ia).
+
+def _armar_uso(entrada, salida, total):
+    if total is None and entrada is not None and salida is not None:
+        total = entrada + salida
+    if total is None:
+        return None
+    return {"entrada": entrada, "salida": salida, "total": total}
+
+
+def _uso_de_respuesta_chat(respuesta):
+    """Tokens de una respuesta con formato OpenAI (Groq y NVIDIA usan el mismo)."""
+    uso = getattr(respuesta, 'usage', None)
+    if uso is None:
+        return None
+    return _armar_uso(uso.prompt_tokens, uso.completion_tokens, uso.total_tokens)
+
+
 def _llamar_gemini(prompt):
     respuesta = client.models.generate_content(
         model='gemini-flash-latest',
@@ -802,7 +822,11 @@ def _llamar_gemini(prompt):
             temperature=0.2
         )
     )
-    return respuesta.text
+    uso = respuesta.usage_metadata
+    if uso is None:
+        return respuesta.text, None
+    # total_token_count incluye también los tokens de "razonamiento" del modelo, si los usó.
+    return respuesta.text, _armar_uso(uso.prompt_token_count, uso.candidates_token_count, uso.total_token_count)
 
 
 def _llamar_groq(prompt):
@@ -818,7 +842,7 @@ def _llamar_groq(prompt):
         response_format={"type": "json_object"},
         stop=None
     )
-    return respuesta.choices[0].message.content
+    return respuesta.choices[0].message.content, _uso_de_respuesta_chat(respuesta)
 
 
 def _llamar_nvidia(prompt):
@@ -835,7 +859,7 @@ def _llamar_nvidia(prompt):
     texto = respuesta.choices[0].message.content
     # NVIDIA no siempre soporta json mode estricto según el modelo; limpiamos
     # posibles fences de markdown por si el modelo los agrega igual.
-    return texto.replace("```json", "").replace("```", "").strip()
+    return texto.replace("```json", "").replace("```", "").strip(), _uso_de_respuesta_chat(respuesta)
 
 
 ADAPTADORES = {
@@ -852,7 +876,11 @@ def _resumir_error(error, largo=160):
 
 
 def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3, avisar=print):
-    """Reintenta un proveedor con backoff exponencial. Devuelve JSON parseado o None.
+    """Reintenta un proveedor con backoff exponencial.
+
+    Devuelve (json_parseado, uso_de_tokens, None) si salió bien, o (None, None, motivo) si no:
+    motivo es "cuota" si se agotaron los reintentos por límite de cuota o saturación (429/503),
+    y "error" si fue cualquier otro error.
 
     avisar: función avisar(mensaje) para reportar reintentos y fallos. En consola es print; el
     pipeline le pasa una que además lo manda al log de la web."""
@@ -860,8 +888,8 @@ def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3
 
     for intento in range(intentos_maximos):
         try:
-            texto_crudo = funcion(prompt)
-            return json.loads(texto_crudo)
+            texto_crudo, uso = funcion(prompt)
+            return json.loads(texto_crudo), uso, None
         except Exception as e:
             if _es_error_de_limite(e):
                 espera = 2 ** (intento + 1)  # 2s, 4s, 8s...
@@ -870,13 +898,13 @@ def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3
                 time.sleep(espera)
             else:
                 avisar(f"   [❌ {nombre_proveedor}: error irrecuperable → {_resumir_error(e)}]")
-                return None
+                return None, None, "error"
 
     avisar(f"   [❌ {nombre_proveedor}: se agotaron los reintentos (probablemente límite de cuota).]")
-    return None
+    return None, None, "cuota"
 
 
-def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar=print):
+def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar=print, registro=None):
     """Orquestador: preclasificación de carrera → caché → Gemini → Groq → NVIDIA.
 
     carrera_cohorte: si se pasa (modo "cohorte completa"), pisa la detección automática por
@@ -885,7 +913,16 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar
 
     avisar: función avisar(mensaje) para los mensajes importantes (avisos de cohorte, cuota
     agotada, cambio de proveedor, fallo total). En consola es print; el pipeline le pasa una que
-    además los manda al log de la web."""
+    además los manda al log de la web.
+
+    registro: dict opcional que se completa con lo que pasó en este perfil, para el resumen de
+    uso de IA de la corrida (ver _resumir_uso_ia): 'proveedor' (el que lo analizó, 'caché' si no
+    hizo falta llamar a ninguno, o None si fallaron todos), 'proveedor_original' (para 'caché':
+    quién lo había analizado), 'uso' (tokens de la llamada que salió bien) y 'fallos' (lista de
+    {'proveedor', 'motivo'} de los proveedores que fallaron antes)."""
+    if registro is None:
+        registro = {}
+    registro.update(proveedor=None, proveedor_original=None, uso=None, fallos=[])
 
     carrera_detectada = detectar_carrera_por_keywords(texto_perfil)
 
@@ -903,6 +940,8 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar
     hash_perfil = calcular_hash_perfil(texto_perfil, plan_de_estudios)
     if hash_perfil in CACHE_ANALISIS:
         print("   [💾 Resultado obtenido de caché, no se llamó a ninguna IA.]")
+        registro["proveedor"] = "caché"
+        registro["proveedor_original"] = CACHE_ANALISIS[hash_perfil].get("proveedor_ia")
         return CACHE_ANALISIS[hash_perfil]
 
     instrucciones_con_fecha = INSTRUCCIONES_SISTEMA.replace("{FECHA_ACTUAL}", fecha_hoy)
@@ -923,16 +962,21 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar
 
     for indice_proveedor, proveedor in enumerate(ORDEN_PROVEEDORES):
         print(f"   [🔎 Analizando con: {proveedor}]")
-        resultado = _intentar_proveedor_con_backoff(proveedor, prompt, avisar=avisar)
+        resultado, uso, motivo_fallo = _intentar_proveedor_con_backoff(proveedor, prompt, avisar=avisar)
         if resultado:
             if indice_proveedor > 0:
                 # Que quede visible en la web que este perfil NO lo analizó el proveedor principal.
                 # ⚠️ (no ℹ️) para que salga en el recuadro de avisos del resumen: los proveedores
                 # alternativos no puntúan igual que Gemini, conviene saber qué perfiles analizaron.
                 avisar(f"   [⚠️ Este perfil se analizó con '{proveedor}' (el proveedor principal no respondió).]")
+            # Se guarda junto con el análisis (y por lo tanto en la caché), para saber quién lo
+            # analizó aunque en una corrida futura salga de la caché.
+            resultado["proveedor_ia"] = proveedor
+            registro.update(proveedor=proveedor, uso=uso)
             CACHE_ANALISIS[hash_perfil] = resultado
             guardar_cache(CACHE_ANALISIS)
             return resultado
+        registro["fallos"].append({"proveedor": proveedor, "motivo": motivo_fallo})
         if indice_proveedor + 1 < len(ORDEN_PROVEEDORES):
             avisar(f"   [↪️ Pasando a '{ORDEN_PROVEEDORES[indice_proveedor + 1]}' tras fallo de {proveedor}...]")
 
@@ -1890,6 +1934,10 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
         )
 
     resultados_finales = []  # Aquí guardaremos todos los JSONs
+    # Qué IA analizó cada perfil, con cuántos tokens y qué proveedores fallaron (ver
+    # analizar_perfil_con_ia), para el resumen de uso de IA. 'indice_resultado' marca la
+    # posición del perfil en resultados_finales cuando el análisis salió bien.
+    registros_ia = []
 
     for indice, archivo in enumerate(lista_pdfs, start=1):
         _avisar(f"Procesando: {archivo['name']}...", indice - 1, total_pdfs)
@@ -1899,9 +1947,12 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
 
         # Paso B: Mandar a la IA
         if texto:
+            registro = {"archivo": archivo['name']}
+            registros_ia.append(registro)
             analisis_json = analizar_perfil_con_ia(
                 texto, fecha_hoy, carrera_cohorte,
-                avisar=lambda mensaje: _avisar(mensaje, perfil=archivo['name'])
+                avisar=lambda mensaje: _avisar(mensaje, perfil=archivo['name']),
+                registro=registro
             )
             if analisis_json:
                 analisis_json['url_perfil'] = url_perfil
@@ -1909,6 +1960,7 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
                     # Aseguramos que el campo que arma la IA coincida textualmente con la
                     # carrera elegida (se usa para las carpetas por carrera y para Histórico).
                     analisis_json['carrera_estudiante'] = carrera_cohorte
+                registro["indice_resultado"] = len(resultados_finales)
                 resultados_finales.append(analisis_json)
                 _avisar(
                     f"✅ Análisis completado para: {analisis_json.get('nombre_estudiante', 'Desconocido')}",
@@ -2012,6 +2064,9 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
                 avisar=_avisar
             )
 
+    uso_ia = _resumir_uso_ia(registros_ia)
+    print(f"\n🤖 Uso de IA: {_texto_uso_ia(uso_ia)}")
+
     if problemas:
         _avisar(f"🎉 PIPELINE FINALIZADO, con {len(problemas)} aviso(s) o error(es): revisalos en el resumen.",
                 total_pdfs, total_pdfs)
@@ -2019,11 +2074,64 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
         _avisar("🎉 PIPELINE FINALIZADO.", total_pdfs, total_pdfs)
 
     return construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso,
-                                      id_presentacion_generada, problemas)
+                                      id_presentacion_generada, problemas, registros_ia)
+
+
+def _resumir_uso_ia(registros_ia):
+    """
+    Resumen de uso de IA de una corrida, a partir de los registros por perfil que completa
+    analizar_perfil_con_ia: cuántos perfiles analizó cada proveedor y con cuántos tokens, el
+    promedio de tokens por perfil (solo de los que llamaron a una IA: los que salen de la caché no
+    gastan tokens), y en cuántos perfiles falló cada proveedor, separando "cuota" (límite de
+    cuota o saturación) de "error" (cualquier otro).
+    """
+    por_proveedor = {}
+    tokens_por_perfil = []
+    fallos_por_proveedor = {}
+
+    for proveedor in ORDEN_PROVEEDORES + ["caché"]:  # en este orden, para mostrarlos igual siempre
+        registros = [r for r in registros_ia if r.get("proveedor") == proveedor]
+        if not registros:
+            continue
+        tokens = [r["uso"]["total"] for r in registros if r.get("uso")]
+        por_proveedor[proveedor] = {
+            "perfiles": len(registros),
+            "tokens": sum(tokens),
+            "promedio_tokens": round(sum(tokens) / len(tokens)) if tokens else None,
+        }
+        tokens_por_perfil.extend(tokens)
+
+    for registro in registros_ia:
+        for fallo in registro.get("fallos", []):
+            conteo = fallos_por_proveedor.setdefault(fallo["proveedor"], {"cuota": 0, "error": 0})
+            conteo[fallo["motivo"]] += 1
+
+    return {
+        "por_proveedor": por_proveedor,
+        "promedio_tokens_por_perfil": round(sum(tokens_por_perfil) / len(tokens_por_perfil)) if tokens_por_perfil else None,
+        "perfiles_con_tokens": len(tokens_por_perfil),
+        "tokens_totales": sum(tokens_por_perfil),
+        "fallos_por_proveedor": fallos_por_proveedor,
+        "sin_analizar": sum(1 for r in registros_ia if not r.get("proveedor")),
+    }
+
+
+def _texto_uso_ia(uso_ia):
+    """Una línea con el resumen de uso de IA, para la consola."""
+    partes = [f"{proveedor} {datos['perfiles']}" for proveedor, datos in uso_ia["por_proveedor"].items()]
+    texto = ", ".join(partes) or "ningún perfil analizado"
+    if uso_ia["promedio_tokens_por_perfil"] is not None:
+        texto += f" | promedio {uso_ia['promedio_tokens_por_perfil']} tokens por perfil"
+    for proveedor, conteo in uso_ia["fallos_por_proveedor"].items():
+        if conteo["cuota"]:
+            texto += f" | {proveedor} sin cuota/saturado en {conteo['cuota']} perfil(es)"
+        if conteo["error"]:
+            texto += f" | {proveedor} con error en {conteo['error']} perfil(es)"
+    return texto
 
 
 def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso, id_presentacion_generada=None,
-                               problemas=None):
+                               problemas=None, registros_ia=None):
     """
     Arma el diccionario resumen final del pipeline: conteos por semáforo, por carrera, alumnos
     fallidos/exitosos y links directos a Sheets/Slides, pensado para mostrarse tal cual en el
@@ -2036,12 +2144,18 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
 
     problemas: lista de mensajes de aviso/error de la corrida (ver _avisar en ejecutar_pipeline),
     para que la web los muestre aparte en el resumen en vez de dejarlos perdidos en el log.
+
+    registros_ia: qué IA analizó cada perfil y con cuántos tokens (ver analizar_perfil_con_ia).
+    Se usa para la columna "IA" de cada alumno y para el resumen de uso de IA (_resumir_uso_ia).
     """
+    registros_ia = registros_ia or []
+    registro_por_indice = {r["indice_resultado"]: r for r in registros_ia if "indice_resultado" in r}
+
     conteo_semaforo = {"Verde": 0, "Amarillo": 0, "Rojo": 0}
     conteo_por_carrera = {}
     alumnos = []
 
-    for resultado in resultados_finales:
+    for indice, resultado in enumerate(resultados_finales):
         semaforo = resultado.get('color_semaforo', 'Error')
         if semaforo in conteo_semaforo:
             conteo_semaforo[semaforo] += 1
@@ -2049,12 +2163,16 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
         carrera = resultado.get('carrera_estudiante') or 'Sin carrera detectada'
         conteo_por_carrera[carrera] = conteo_por_carrera.get(carrera, 0) + 1
 
+        registro = registro_por_indice.get(indice, {})
         alumnos.append({
             "nombre": f"{resultado.get('nombre_estudiante', 'Desconocido')} {resultado.get('apellido_estudiante', '')}".strip(),
             "carrera": carrera,
             "puntaje": resultado.get('puntaje_general', 0),
             "semaforo": semaforo,
             "url_perfil": resultado.get('url_perfil'),
+            "ia": registro.get("proveedor"),
+            "ia_original": registro.get("proveedor_original"),
+            "tokens": (registro.get("uso") or {}).get("total"),
         })
 
     links = {}
@@ -2078,6 +2196,7 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
         "alumnos": alumnos,
         "links": links,
         "avisos": list(problemas or []),
+        "uso_ia": _resumir_uso_ia(registros_ia),
         "resultados": resultados_finales,
     }
 
