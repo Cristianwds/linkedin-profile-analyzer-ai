@@ -44,6 +44,7 @@ import secrets
 import threading
 import time
 import uuid
+from datetime import date
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
@@ -547,6 +548,43 @@ def editar_plan_de_estudios(nombre: str, body: PlanTextoBody, _creds: Credential
     except ValueError as e:
         raise HTTPException(404, str(e))
     return {"nombre_carrera": nombre, "caracteres": caracteres}
+
+
+# ==============================================================================
+# PRESENTACIONES DE ESTADÍSTICAS POR RANGO DE FECHAS
+# ==============================================================================
+
+class PresentacionRangoBody(BaseModel):
+    desde: date
+    hasta: date
+    carrera: Optional[str] = None  # None o "" = todas las carreras
+    modo: Optional[str] = None     # "Cohorte", "Mixto", o None/"" = los dos
+
+
+@app.post("/api/presentaciones/generar")
+def generar_presentacion_por_rango(body: PresentacionRangoBody, creds: Credentials = Depends(usuario_actual)):
+    """
+    Genera una presentación de estadísticas con los perfiles del Histórico entre desde y hasta,
+    opcionalmente filtrados por carrera y/o tipo de corrida (ver main.generar_presentacion_por_rango).
+    Es un `def` común a propósito (FastAPI lo corre en un thread aparte): tarda unos segundos y no
+    tiene que congelar el resto del servidor.
+    """
+    if body.hasta < body.desde:
+        raise HTTPException(400, "La fecha 'hasta' no puede ser anterior a 'desde'.")
+    if body.modo and body.modo not in ("Cohorte", "Mixto"):
+        raise HTTPException(400, "El tipo de corrida tiene que ser 'Cohorte' o 'Mixto'.")
+
+    avisos = []
+    try:
+        resultado = pipeline.generar_presentacion_por_rango(
+            creds, body.desde, body.hasta, carrera=body.carrera or None, modo=body.modo or None,
+            avisar=lambda mensaje: avisos.append(mensaje.strip().strip("[]").strip()),
+        )
+    except Exception as e:
+        raise HTTPException(500, f"No se pudo generar la presentación: {pipeline._resumir_error(e)}")
+    if resultado is None:
+        return {"generada": False, "avisos": avisos}
+    return {"generada": True, **resultado, "avisos": avisos}
 
 
 # ==============================================================================

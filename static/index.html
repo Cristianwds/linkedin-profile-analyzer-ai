@@ -105,7 +105,7 @@
 
   /* ---------- controles ---------- */
   label{font-size:.85rem; font-weight:600; display:block; margin-bottom:6px;}
-  select, input[type=text]{
+  select, input[type=text], input[type=date]{
     width:100%;
     padding:9px 12px;
     border:1px solid var(--borde);
@@ -284,6 +284,7 @@
   .nivel-badge.grado{background:#eef2ff; color:var(--azul-claro);}
   .nivel-badge.posgrado{background:#f3e8ff; color:#7c3aed;}
 
+  .form-presentacion{display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:16px;}
   .form-nueva-carrera{display:grid; grid-template-columns:1fr 1fr auto auto; gap:12px; align-items:end; margin-top:18px;}
 
   .filtro-nivel{display:flex; gap:8px; margin-bottom:16px;}
@@ -422,6 +423,7 @@
     </div>
     <button data-tab="ejecutar" class="activo">Ejecutar análisis</button>
     <button data-tab="carreras">Carreras y planes</button>
+    <button data-tab="presentaciones">Presentaciones</button>
     <div class="estado-sistema" id="panel-estado-sistema">
       <div class="fila"><span class="punto ok"></span> Verificando…</div>
     </div>
@@ -517,6 +519,43 @@
         <div style="margin-top:18px;">
           <button class="secundario" id="btn-nueva-corrida">Correr otro análisis</button>
         </div>
+      </div>
+    </section>
+
+    <!-- ======================= TAB: PRESENTACIONES ======================= -->
+    <section id="tab-presentaciones" class="oculto">
+      <h1>Presentaciones de estadísticas</h1>
+      <p class="lead">Al terminar cada análisis se genera sola una presentación: la de esa cohorte, o la de los conjuntos mixtos del día. Acá podés pedir una de un período, por ejemplo un cuatrimestre entero o una sola carrera.</p>
+
+      <div class="panel">
+        <h2>Generar presentación</h2>
+        <p class="desc">Usa los perfiles del Histórico de la planilla entre esas dos fechas. La carrera y el tipo de corrida son opcionales: si los dejás como están, entran todos.</p>
+
+        <div class="form-presentacion">
+          <div>
+            <label for="presentacion-desde">Desde</label>
+            <input type="date" id="presentacion-desde">
+          </div>
+          <div>
+            <label for="presentacion-hasta">Hasta</label>
+            <input type="date" id="presentacion-hasta">
+          </div>
+          <div>
+            <label for="presentacion-carrera">Carrera</label>
+            <select id="presentacion-carrera"><option value="">Todas</option></select>
+          </div>
+          <div>
+            <label for="presentacion-modo">Tipo de corrida</label>
+            <select id="presentacion-modo">
+              <option value="">Cohortes y conjuntos mixtos</option>
+              <option value="Cohorte">Solo cohortes</option>
+              <option value="Mixto">Solo conjuntos mixtos</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="mensaje-presentacion"></div>
+        <button class="primario" id="btn-generar-presentacion">Generar presentación</button>
       </div>
     </section>
 
@@ -643,6 +682,7 @@ document.querySelectorAll(".nav button[data-tab]").forEach(btn => {
     document.querySelectorAll("main > section").forEach(s => s.classList.add("oculto"));
     document.getElementById("tab-" + btn.dataset.tab).classList.remove("oculto");
     if (btn.dataset.tab === "carreras") cargarCarreras();
+    if (btn.dataset.tab === "presentaciones") prepararPresentaciones();
   });
 });
 
@@ -894,6 +934,76 @@ document.getElementById('btn-nueva-corrida').addEventListener('click', () => {
   btn.disabled = false;
   btn.textContent = 'Iniciar análisis';
   poblarSelectCarreras();
+});
+
+/* ---------------- presentaciones por rango de fechas ---------------- */
+function fechaISO(d){
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function prepararPresentaciones(){
+  // Por defecto: del primer día del mes a hoy (solo si la persona todavía no eligió fechas).
+  const desde = document.getElementById('presentacion-desde');
+  const hasta = document.getElementById('presentacion-hasta');
+  const hoy = new Date();
+  if (!desde.value) desde.value = fechaISO(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+  if (!hasta.value) hasta.value = fechaISO(hoy);
+
+  const select = document.getElementById('presentacion-carrera');
+  const elegida = select.value;
+  try{
+    const r = await apiFetch(`${API}/api/carreras`);
+    const carreras = await r.json();
+    const opcion = c => `<option value="${esc(c.nombre)}">${esc(c.nombre)}</option>`;
+    const grado = carreras.filter(c => c.nivel !== 'posgrado');
+    const posgrado = carreras.filter(c => c.nivel === 'posgrado');
+    select.innerHTML = '<option value="">Todas</option>'
+      + (grado.length ? `<optgroup label="Grado">${grado.map(opcion).join('')}</optgroup>` : '')
+      + (posgrado.length ? `<optgroup label="Posgrado">${posgrado.map(opcion).join('')}</optgroup>` : '');
+    select.value = elegida;
+  }catch(e){ /* sin la lista se puede generar igual, con "Todas" */ }
+}
+
+document.getElementById('btn-generar-presentacion').addEventListener('click', async () => {
+  const msg = document.getElementById('mensaje-presentacion');
+  const btn = document.getElementById('btn-generar-presentacion');
+  const cuerpo = {
+    desde: document.getElementById('presentacion-desde').value,
+    hasta: document.getElementById('presentacion-hasta').value,
+    carrera: document.getElementById('presentacion-carrera').value || null,
+    modo: document.getElementById('presentacion-modo').value || null,
+  };
+  msg.innerHTML = '';
+  if (!cuerpo.desde || !cuerpo.hasta){
+    msg.innerHTML = '<div class="mensaje-error">Elegí las dos fechas.</div>';
+    return;
+  }
+  if (cuerpo.hasta < cuerpo.desde){
+    msg.innerHTML = '<div class="mensaje-error">La fecha "hasta" no puede ser anterior a "desde".</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Generando… (puede tardar un minuto)';
+  try{
+    const r = await apiFetch(`${API}/api/presentaciones/generar`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(cuerpo)
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'No se pudo generar la presentación.');
+    const avisos = (d.avisos || []).filter(a => a.includes('⚠️') || a.includes('❌'));
+    const listaAvisos = avisos.length ? `<ul style="margin:8px 0 0; padding-left:18px;">${avisos.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
+    if (d.generada){
+      msg.innerHTML = `<div class="mensaje-ok">Lista: <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.nombre)}</a> (${d.perfiles} perfiles). Quedó en la carpeta de presentaciones, en "Por rango".${listaAvisos}</div>`;
+    } else {
+      msg.innerHTML = `<div class="mensaje-error">${esc(avisos[0] || 'No hay perfiles para ese período y filtro.')}</div>`;
+    }
+  }catch(e){
+    msg.innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Generar presentación';
+  }
 });
 
 /* ---------------- gestión de carreras y planes ---------------- */

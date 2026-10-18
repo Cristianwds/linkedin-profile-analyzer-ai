@@ -62,10 +62,11 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
 
-# Presentación de estadísticas de cada día. ID_PRESENTACION_MASTER_STATS es la plantilla actual
-# (Plantilla_DP_version3): generar_presentacion_stats.py la copia a ID_CARPETA_PRESENTACIONES
-# como "Estadísticas DP — <fecha>" y le carga los números, barras y anillos del día con formas
-# nativas (ver generar_presentacion_del_dia).
+# Presentaciones de estadísticas. ID_PRESENTACION_MASTER_STATS es la plantilla actual
+# (Plantilla_DP_version3): generar_presentacion_stats.py la copia a ID_CARPETA_PRESENTACIONES y le
+# carga los números, barras y anillos con formas nativas. Al terminar cada corrida se genera una
+# por cohorte (o una con los mixtos del día), y desde la web se puede pedir una por rango de fechas
+# (ver generar_presentacion_de_la_corrida y generar_presentacion_por_rango).
 #
 # ID_PRESENTACION_STATS es la plantilla VIEJA, con gráficos vinculados a la planilla: solo se usa
 # como respaldo si ID_PRESENTACION_MASTER_STATS no está configurada (refresca sus gráficos y deja
@@ -1135,7 +1136,7 @@ def obtener_o_crear_hoja_historico(servicio_sheets, spreadsheet_id, año):
     if not candidatas:
         raise RuntimeError(
             f"No se encontró ninguna hoja '{nombre_objetivo}' ni '{NOMBRE_HOJA_HISTORICO}'. "
-            f"Creá '{nombre_objetivo}' a mano con las 15 columnas correspondientes antes de correr el pipeline."
+            f"Creá '{nombre_objetivo}' a mano con las 16 columnas correspondientes (de Fecha a Modo) antes de correr el pipeline."
         )
 
     candidatas.sort(key=lambda t: t[0], reverse=True)
@@ -1155,7 +1156,7 @@ def obtener_o_crear_hoja_historico(servicio_sheets, spreadsheet_id, año):
     # La copia trae todas las filas de datos del año anterior — las borramos, dejando solo el
     # encabezado (fila 1) y el formato/columnas intactos.
     servicio_sheets.spreadsheets().values().clear(
-        spreadsheetId=spreadsheet_id, range=f"'{nombre_objetivo}'!A2:O", body={}
+        spreadsheetId=spreadsheet_id, range=f"'{nombre_objetivo}'!A2:P", body={}
     ).execute()
 
     print(f"   [📄 Hoja nueva creada para el año {año}: '{nombre_objetivo}' (copiada de '{nombre_fuente}', sin las filas de datos).]")
@@ -1321,10 +1322,16 @@ def _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, nombre_hoja, co
     valores = resultado.get('values', [])
     return len(valores) + 1
 
-def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy, nombre_hoja_historico, avisar=print):
-    """Escribe las filas del día en la hoja Histórico del año correspondiente (15 columnas,
-    Fecha en A, URL en D), calculando la próxima fila libre en vez de usar append() (ver
-    _obtener_proxima_fila_libre)."""
+def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy, nombre_hoja_historico,
+                              modo="", avisar=print):
+    """Escribe las filas del día en la hoja Histórico del año correspondiente (16 columnas,
+    Fecha en A, URL en D, Modo en P), calculando la próxima fila libre en vez de usar append()
+    (ver _obtener_proxima_fila_libre).
+
+    modo: "Cohorte" o "Mixto", según el tipo de corrida. Con Fecha, Carrera y Modo se arma cada
+    presentación de estadísticas (ver generar_presentacion_stats.generar_presentacion_desde_historico).
+    Va al final de la tabla a propósito: las fórmulas de 'Estadísticas del día' apuntan a las
+    columnas por letra, y agregarla en el medio las corría."""
     print(f"Escribiendo datos en '{nombre_hoja_historico}'...")
 
     valores = []
@@ -1345,13 +1352,14 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
             _estado_categoria(resultado, 'educacion'),
             _estado_categoria(resultado, 'certificaciones'),
             _estado_categoria(resultado, 'aptitudes'),
+            modo,
         ]
         valores.append(fila)
 
     try:
         fila_inicio = _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, nombre_hoja_historico)
         fila_fin = fila_inicio + len(valores) - 1
-        rango = f"'{nombre_hoja_historico}'!A{fila_inicio}:O{fila_fin}"
+        rango = f"'{nombre_hoja_historico}'!A{fila_inicio}:P{fila_fin}"
 
         servicio_sheets.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
@@ -1583,38 +1591,77 @@ def desvincular_graficos_slides(servicio_slides, id_presentacion, avisar=print):
                f"vinculados: si alguien les da 'Actualizar', van a cambiar): {_resumir_error(e)}]")
 
 
-def generar_presentacion_del_dia(creds, servicio_sheets, nombre_hoja_hoy, fecha_iso, avisar=print):
-    """
-    Genera "Estadísticas DP — <fecha>" a partir de la plantilla ID_PRESENTACION_MASTER_STATS, con
-    TODAS las filas de la hoja del día (no solo las de esta corrida): es una presentación por día,
-    y si el pipeline corre de nuevo el mismo día, la anterior se manda a la papelera y se regenera
-    con todo lo del día (ver generar_presentacion_stats.duplicar_o_reemplazar_presentacion_del_dia).
+# Subcarpetas de ID_CARPETA_PRESENTACIONES, igual que los informes (Cohorte / Mezclado), más una
+# para las que se piden desde la web por rango de fechas.
+SUBCARPETA_PRESENTACIONES_COHORTE = "Cohorte"
+SUBCARPETA_PRESENTACIONES_MIXTO = "Mezclado"
+SUBCARPETA_PRESENTACIONES_RANGO = "Por rango"
 
-    El subtítulo dice la carrera si el día tiene una sola, o cuántas carreras hay si son varias.
-    Cualquier error se avisa y devuelve None: la presentación no tiene que frenar los informes.
+
+def generar_presentacion_de_la_corrida(creds, servicio_sheets, servicio_drive, fecha, carrera_cohorte=None,
+                                       avisar=print):
+    """
+    Presentación de estadísticas al terminar una corrida, a partir del Histórico (que ya tiene las
+    filas de esta corrida):
+      - corrida de cohorte: "Estadísticas DP — Cohorte — <carrera> — <fecha>", solo con esa cohorte
+        en ese día (si la misma cohorte se corrió en dos tandas el mismo día, junta las dos);
+      - corrida mixta: "Estadísticas DP — Mixto — <fecha>", con todas las corridas mixtas del día.
+    Si ya existe una con ese nombre, se manda a la papelera y se regenera.
+
+    Devuelve el id de la presentación, o None si no se pudo (con un aviso): la presentación no
+    tiene que frenar los informes.
     """
     if not ID_CARPETA_PRESENTACIONES:
         avisar("⚠️ No está configurada ID_CARPETA_PRESENTACIONES: no se generó la presentación de estadísticas.")
         return None
+    modo = presentacion_stats.MODO_COHORTE if carrera_cohorte else presentacion_stats.MODO_MIXTO
     try:
-        filas = presentacion_stats.leer_filas_hoja_como_diccionarios(servicio_sheets, ID_SPREADSHEET, nombre_hoja_hoy)
-        if not filas:
-            avisar(f"⚠️ La hoja '{nombre_hoja_hoy}' quedó sin filas: no se generó la presentación de estadísticas.")
-            return None
-        id_presentacion, _ = presentacion_stats.generar_presentacion_stats(
-            creds,
-            filas,
-            fecha_iso=fecha_iso,
-            subtitulo_presentacion=presentacion_stats.subtitulo_desde_filas(filas),
-            id_master=ID_PRESENTACION_MASTER_STATS,
-            carpeta_destino_id=ID_CARPETA_PRESENTACIONES,
-            avisar=avisar,
+        carpeta = obtener_o_crear_subcarpeta(
+            servicio_drive, ID_CARPETA_PRESENTACIONES,
+            SUBCARPETA_PRESENTACIONES_COHORTE if carrera_cohorte else SUBCARPETA_PRESENTACIONES_MIXTO,
         )
-        avisar(f"✅ Presentación de estadísticas del día generada ({len(filas)} perfiles).")
+        resultado = presentacion_stats.generar_presentacion_desde_historico(
+            creds, servicio_sheets, ID_SPREADSHEET, fecha, fecha, carrera=carrera_cohorte, modo=modo,
+            carpeta_destino_id=carpeta, id_master=ID_PRESENTACION_MASTER_STATS, avisar=avisar,
+        )
+        if not resultado:
+            return None
+        id_presentacion, _, cantidad = resultado
+        avisar(f"✅ Presentación de estadísticas generada: "
+               f"{presentacion_stats.nombre_presentacion(fecha, fecha, carrera_cohorte, modo)} ({cantidad} perfiles).")
         return id_presentacion
     except Exception as e:
         avisar(f"❌ No se pudo generar la presentación de estadísticas: {_resumir_error(e)}")
         return None
+
+
+def generar_presentacion_por_rango(creds, desde, hasta, carrera=None, modo=None, avisar=print):
+    """
+    Presentación de estadísticas de un rango de fechas, opcionalmente filtrada por carrera y/o modo
+    ("Cohorte"/"Mixto"), a partir del Histórico. La usa la web ("Generar presentación"). Se guarda
+    en ID_CARPETA_PRESENTACIONES/Por rango.
+
+    Devuelve {"url", "nombre", "perfiles"}, o None si no hay perfiles para ese filtro (con un aviso).
+    Lanza RuntimeError si falta configuración o falla la conexión con Google.
+    """
+    faltantes = [n for n, v in (("ID_SPREADSHEET", ID_SPREADSHEET), ("ID_CARPETA_PRESENTACIONES", ID_CARPETA_PRESENTACIONES),
+                                ("ID_PRESENTACION_MASTER_STATS", ID_PRESENTACION_MASTER_STATS)) if not v]
+    if faltantes:
+        raise RuntimeError(f"Faltan variables de entorno: {', '.join(faltantes)}.")
+    servicio_sheets = construir_servicio_sheets(creds)
+    servicio_drive = construir_servicio_drive(creds)
+    if not servicio_sheets or not servicio_drive:
+        raise RuntimeError("No se pudo conectar con Google Sheets o Drive.")
+
+    carpeta = obtener_o_crear_subcarpeta(servicio_drive, ID_CARPETA_PRESENTACIONES, SUBCARPETA_PRESENTACIONES_RANGO)
+    resultado = presentacion_stats.generar_presentacion_desde_historico(
+        creds, servicio_sheets, ID_SPREADSHEET, desde, hasta, carrera=carrera, modo=modo,
+        carpeta_destino_id=carpeta, id_master=ID_PRESENTACION_MASTER_STATS, avisar=avisar,
+    )
+    if not resultado:
+        return None
+    _, url, cantidad = resultado
+    return {"url": url, "nombre": presentacion_stats.nombre_presentacion(desde, hasta, carrera, modo), "perfiles": cantidad}
 
 # ==============================================================================
 # MÓDULO 4: GOOGLE DOCS (Generación de Informes a partir de Plantilla)
@@ -2043,14 +2090,15 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
         actualizar_referencia_historico_en_estadisticas(
             servicio_sheets, ID_SPREADSHEET, nombre_hoja_historico_anterior, nombre_hoja_historico, avisar=_avisar
         )
+        modo_corrida = presentacion_stats.MODO_COHORTE if carrera_cohorte else presentacion_stats.MODO_MIXTO
         escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy,
-                                  nombre_hoja_historico, avisar=_avisar)
+                                  nombre_hoja_historico, modo=modo_corrida, avisar=_avisar)
 
         actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy, avisar=_avisar)
 
         if ID_PRESENTACION_MASTER_STATS:
-            id_presentacion_generada = generar_presentacion_del_dia(
-                creds, servicio_sheets, nombre_hoja_hoy, fecha_iso, avisar=_avisar
+            id_presentacion_generada = generar_presentacion_de_la_corrida(
+                creds, servicio_sheets, servicio_drive, hoy.date(), carrera_cohorte, avisar=_avisar
             )
         elif ID_PRESENTACION_STATS:
             # Respaldo: plantilla vieja con gráficos vinculados (ver ID_PRESENTACION_STATS arriba).

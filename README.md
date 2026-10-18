@@ -43,6 +43,21 @@ Desde el panel se puede:
 - Subir el PDF del plan de estudios de una carrera: se procesa con la misma lógica de
   `extraccion_plan_estudios.py` (grilla por coordenadas → tablas → reordenamiento con IA como
   último recurso) y avisa si el resultado conviene revisarlo a mano.
+- Generar una presentación de estadísticas de un período (pestaña "Presentaciones"): rango de
+  fechas y, opcionalmente, una carrera y/o el tipo de corrida (cohorte o conjunto mixto).
+
+### Presentaciones de estadísticas
+
+Salen del Histórico de la planilla (columnas Fecha, Carrera y Modo) con la plantilla
+`ID_PRESENTACION_MASTER_STATS`, y se guardan en `ID_CARPETA_PRESENTACIONES`:
+
+- **Al terminar una corrida de cohorte** → `Cohorte/Estadísticas DP — Cohorte — <carrera> — <fecha>`,
+  solo con esa cohorte ese día (si se corre en dos tandas el mismo día, junta las dos).
+- **Al terminar una corrida mixta** → `Mezclado/Estadísticas DP — Mixto — <fecha>`, con todas las
+  corridas mixtas del día.
+- **Desde la web, por rango** → `Por rango/Estadísticas DP — <desde> a <hasta>` (+ carrera / modo).
+
+Si ya existe una con el mismo nombre, se manda a la papelera y se regenera.
 
 Las carreras y sus palabras clave viven en `carreras_grado.json` / `carreras_posgrado.json`
 (ya no están hardcodeadas en `main.py`), así que los cambios desde la web quedan persistidos ahí.

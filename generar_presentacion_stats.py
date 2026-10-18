@@ -14,8 +14,13 @@ CÓMO FUNCIONA
    Todo lo que cambia con los datos son formas nativas de Slides que el código controla: no
    hay gráficos vinculados a Sheets. Así la presentación usa siempre la misma paleta y la misma
    tipografía, y los gráficos coinciden siempre con los números.
-2. Cada corrida del pipeline:
-   a) calcula los porcentajes reales del día a partir de la hoja de resultados,
+2. Las filas salen del Histórico (columnas Fecha, Carrera, Modo y los estados), filtradas según
+   el caso (ver generar_presentacion_desde_historico):
+     - al terminar una corrida de cohorte: esa cohorte en ese día,
+     - al terminar una corrida mixta: todas las corridas mixtas de ese día,
+     - desde la web: un rango de fechas, opcionalmente filtrado por carrera y/o modo.
+   Con esas filas:
+   a) calcula los porcentajes,
    b) duplica el master (Drive API) hacia la carpeta de presentaciones,
    c) reemplaza cada token de texto por su valor real (Slides API, replaceAllText) y achica
       la letra del título si es largo, para que no se pise con el subtítulo,
@@ -31,7 +36,7 @@ CONFIGURACIÓN NECESARIA (agregar a .env / .env.yaml)
 ID_PRESENTACION_MASTER_STATS="id_del_archivo_master"
 
 (ID_CARPETA_PRESENTACIONES ya existe en el proyecto — ahí se guarda cada presentación
-generada. ID_SPREADSHEET también ya existe — de ahí salen las filas del día.)
+generada. ID_SPREADSHEET también ya existe — de su Histórico salen las filas.)
 
 CHECKLIST DEL MASTER
 --------------------
@@ -71,14 +76,14 @@ el nombre exacto, sin espacios):
 El largo total de cada barra es el que tiene en el master (ancho que se ve, con su escala):
 el código solo reparte ese largo entre los segmentos según los porcentajes.
 
-Para probarlo solo: `python generar_presentacion_stats.py <hoja_del_dia>` (ver el bloque main
-abajo). Si un token da "0 ocurrencias" o una forma sale como "no encontrada", ese nombre no
+Para probarlo solo: `python generar_presentacion_stats.py 2026-10-08` (un día) o
+`python generar_presentacion_stats.py 2026-10-01 2026-10-17 --carrera "Abogacía" --modo Cohorte`
+(ver el bloque main abajo). Si un token da "0 ocurrencias" o una forma sale como "no encontrada", ese nombre no
 quedó escrito igual en el master (typo, mayúscula de más, etc.).
 """
 
 import math
 import os
-import sys
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -89,8 +94,11 @@ from googleapiclient.discovery import build
 # CONFIGURACIÓN — AJUSTAR SI LOS HEADERS REALES DE LA HOJA SON DISTINTOS
 # ==============================================================================
 
+# Encabezados del Histórico (las hojas diarias usan los mismos, salvo Fecha y Modo).
+COLUMNA_FECHA = "Fecha"
+COLUMNA_MODO = "Modo"            # "Cohorte" o "Mixto": de qué tipo de corrida salió la fila
 COLUMNA_CARRERA = "Carrera"
-COLUMNA_SEMAFORO = "Semáforo (Estado)"
+COLUMNA_SEMAFORO = "Semáforo"
 COLUMNA_URL = "Estado Url"
 COLUMNA_TITULAR = "Estado Titular"
 COLUMNA_ACERCA_DE = "Estado Acerca de"
@@ -126,6 +134,10 @@ CARACTERES_TITULO_A_TAMANO_COMPLETO = 36
 TAMANO_TITULO_MINIMO_PT = 24
 
 PT_A_EMU = 12700  # por si algún elemento del master quedó en puntos en vez de EMU
+
+MODO_COHORTE = "Cohorte"
+MODO_MIXTO = "Mixto"
+PREFIJO_HOJA_HISTORICO = "Histórico"  # una hoja por año: "Histórico 2026", "Histórico 2027", ...
 
 
 # ==============================================================================
@@ -165,6 +177,55 @@ def leer_filas_hoja_como_diccionarios(servicio_sheets, spreadsheet_id, nombre_ho
         for fila in valores[1:]
         if any(str(celda).strip() for celda in fila)
     ]
+
+
+def _parsear_fecha(texto):
+    """Fecha de la columna Fecha del Histórico ("7/10/2026" o "07/10/2026"), o None si no se puede leer."""
+    try:
+        dia, mes, anio = (int(parte) for parte in str(texto).strip().split("/"))
+        return date(anio, mes, dia)
+    except (ValueError, TypeError):
+        return None
+
+
+def leer_filas_historico(servicio_sheets, spreadsheet_id, desde, hasta):
+    """Filas del Histórico con Fecha entre desde y hasta (inclusive, objetos date), leyendo la hoja
+    de cada año del rango ("Histórico 2026", ...). Las hojas que no existen se saltean. Cada fila
+    lleva además "_fecha" (date), para no tener que volver a parsearla."""
+    titulos = {
+        h["properties"]["title"]
+        for h in servicio_sheets.spreadsheets().get(spreadsheetId=spreadsheet_id, fields="sheets.properties.title").execute()["sheets"]
+    }
+    filas = []
+    for anio in range(desde.year, hasta.year + 1):
+        hoja = f"{PREFIJO_HOJA_HISTORICO} {anio}"
+        if hoja not in titulos:
+            continue
+        for fila in leer_filas_hoja_como_diccionarios(servicio_sheets, spreadsheet_id, hoja):
+            fecha = _parsear_fecha(fila.get(COLUMNA_FECHA))
+            if fecha and desde <= fecha <= hasta:
+                fila["_fecha"] = fecha
+                filas.append(fila)
+    return filas
+
+
+def filtrar_filas(filas, carrera=None, modo=None):
+    """Filtra por carrera y/o por modo ("Cohorte"/"Mixto"), sin distinguir mayúsculas ni tildes.
+    None en cualquiera de los dos = sin filtro."""
+    resultado = filas
+    if carrera:
+        resultado = [f for f in resultado if _normalizar(f.get(COLUMNA_CARRERA)) == _normalizar(carrera)]
+    if modo:
+        resultado = [f for f in resultado if _normalizar(f.get(COLUMNA_MODO)) == _normalizar(modo)]
+    return resultado
+
+
+def texto_periodo(desde, hasta=None):
+    """"08/10/2026" para un día, "01/10/2026 – 17/10/2026" para un rango."""
+    hasta = hasta or desde
+    if desde == hasta:
+        return desde.strftime("%d/%m/%Y")
+    return f"{desde.strftime('%d/%m/%Y')} – {hasta.strftime('%d/%m/%Y')}"
 
 
 def _porcentaje_entero(cantidad, total):
@@ -215,8 +276,8 @@ def calcular_metricas_del_dia(filas):
 
 
 def subtitulo_desde_filas(filas):
-    """Subtítulo de la portada según las carreras del día: el nombre si es una sola (una cohorte),
-    "Perfiles de N carreras" si son varias, o vacío si la columna no tiene datos."""
+    """Subtítulo de la portada según las carreras de las filas: el nombre si es una sola (una
+    cohorte), "Perfiles de N carreras" si son varias, o vacío si la columna no tiene datos."""
     carreras = {str(fila.get(COLUMNA_CARRERA, "")).strip() for fila in filas} - {""}
     if len(carreras) == 1:
         return carreras.pop()
@@ -225,12 +286,13 @@ def subtitulo_desde_filas(filas):
     return ""
 
 
-def formatear_tokens_texto(metricas, fecha_iso, titulo_presentacion, subtitulo_presentacion):
+def formatear_tokens_texto(metricas, periodo, titulo_presentacion, subtitulo_presentacion):
     """Arma el diccionario {TOKEN: 'texto a insertar'} para el reemplazo de texto,
-    a partir de las métricas numéricas (agrega el símbolo % donde corresponde). La fecha se
-    muestra en formato argentino (24/09/2026), aunque el nombre del archivo use la ISO."""
+    a partir de las métricas numéricas (agrega el símbolo % donde corresponde).
+    periodo: el texto de texto_periodo() ("08/10/2026" o "01/10/2026 – 17/10/2026"); va en el
+    token FECHA_CORRIDA, que está en la etiqueta de la portada y en el pie de cada diapositiva."""
     mapa = {
-        "FECHA_CORRIDA": date.fromisoformat(fecha_iso).strftime("%d/%m/%Y"),
+        "FECHA_CORRIDA": periodo,
         "CANT_ALUMNOS": str(metricas["CANT_ALUMNOS"]),
         "TITULO_PRESENTACION": titulo_presentacion,
         "SUBTITULO_PRESENTACION": subtitulo_presentacion,
@@ -590,10 +652,36 @@ def actualizar_formas_nativas(servicio_slides, presentation_id, metricas, titulo
 # ORQUESTADOR
 # ==============================================================================
 
+def nombre_presentacion(desde, hasta=None, carrera=None, modo=None):
+    """Nombre del archivo: "Estadísticas DP — [Cohorte|Mixto —] [<carrera> —] <fecha o rango ISO>".
+    Con la fecha en formato ISO para que los archivos queden ordenados en el Drive."""
+    hasta = hasta or desde
+    partes = ["Estadísticas DP"]
+    if modo:
+        partes.append(MODO_COHORTE if _normalizar(modo) == _normalizar(MODO_COHORTE) else MODO_MIXTO)
+    if carrera:
+        partes.append(carrera)
+    partes.append(desde.isoformat() if desde == hasta else f"{desde.isoformat()} a {hasta.isoformat()}")
+    return " — ".join(partes)
+
+
+def subtitulo_presentacion(filas, carrera=None, modo=None):
+    """"Cohorte · Maestría en Marketing", "Conjunto mixto · Perfiles de 4 carreras", etc."""
+    base = carrera or subtitulo_desde_filas(filas)
+    if modo and _normalizar(modo) == _normalizar(MODO_COHORTE):
+        etiqueta = "Cohorte"
+    elif modo:
+        etiqueta = "Conjunto mixto"
+    else:
+        return base
+    return f"{etiqueta} · {base}" if base else etiqueta
+
+
 def generar_presentacion_stats(
     creds,
-    filas_del_dia,
-    fecha_iso=None,
+    filas,
+    desde=None,
+    hasta=None,
     titulo_presentacion="Análisis de perfiles de LinkedIn",
     subtitulo_presentacion="",
     id_master=None,
@@ -602,27 +690,30 @@ def generar_presentacion_stats(
     avisar=print,
 ):
     """
-    Punto de entrada pensado para llamarse desde ejecutar_pipeline() en main.py, al final
-    de la corrida, con las filas del día leídas de la hoja de resultados.
+    Genera la presentación a partir de las filas que se le pasen (de una corrida, de un día o de
+    un rango del Histórico). desde/hasta son el período que se muestra en la portada y en el pie
+    (por defecto, hoy en Argentina).
 
-    nombre_archivo: por defecto "Estadísticas DP — <fecha>" (una por día: si ya existe, se manda
-    a la papelera y se regenera). avisar: igual que en el pipeline, para que los problemas
-    lleguen a la web.
+    nombre_archivo: por defecto nombre_presentacion(desde, hasta). Si ya existe uno igual en la
+    carpeta, se manda a la papelera y se regenera. avisar: igual que en el pipeline, para que los
+    problemas lleguen a la web.
 
     Devuelve (presentation_id, url_presentacion).
     """
     # Misma zona horaria que ZONA_HORARIA en main.py (no se importa de ahí para no arrastrar todo
     # el pipeline al importar este módulo): en Cloud Run, date.today() da la fecha en UTC.
-    fecha_iso = fecha_iso or datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
+    desde = desde or datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date()
+    hasta = hasta or desde
     id_master = id_master or os.environ["ID_PRESENTACION_MASTER_STATS"]
     carpeta_destino_id = carpeta_destino_id or os.environ["ID_CARPETA_PRESENTACIONES"]
-    nombre_archivo = nombre_archivo or f"Estadísticas DP — {fecha_iso}"
+    nombre_archivo = nombre_archivo or nombre_presentacion(desde, hasta)
 
     servicio_drive = construir_servicio_drive(creds)
     servicio_slides = build("slides", "v1", credentials=creds)
 
-    metricas = calcular_metricas_del_dia(filas_del_dia)
-    mapa_tokens_texto = formatear_tokens_texto(metricas, fecha_iso, titulo_presentacion, subtitulo_presentacion)
+    metricas = calcular_metricas_del_dia(filas)
+    mapa_tokens_texto = formatear_tokens_texto(metricas, texto_periodo(desde, hasta), titulo_presentacion,
+                                               subtitulo_presentacion)
 
     presentation_id = duplicar_o_reemplazar_presentacion_del_dia(
         servicio_drive, id_master, carpeta_destino_id, nombre_archivo
@@ -636,29 +727,55 @@ def generar_presentacion_stats(
     return presentation_id, url_presentacion
 
 
+def generar_presentacion_desde_historico(creds, servicio_sheets, spreadsheet_id, desde, hasta=None, carrera=None,
+                                         modo=None, carpeta_destino_id=None, id_master=None, nombre_archivo=None,
+                                         avisar=print):
+    """
+    Lee el Histórico entre desde y hasta, filtra por carrera y/o modo, y genera la presentación con
+    esas filas. Es la misma función para la presentación automática de cada corrida (un día, una
+    cohorte o los mixtos) y para la que se pide desde la web por rango de fechas.
+
+    Devuelve (presentation_id, url, cantidad_de_perfiles), o None si no hay filas que cumplan el
+    filtro (con un aviso).
+    """
+    hasta = hasta or desde
+    filas = filtrar_filas(leer_filas_historico(servicio_sheets, spreadsheet_id, desde, hasta), carrera, modo)
+    if not filas:
+        avisar(f"⚠️ No hay perfiles en el Histórico para {texto_periodo(desde, hasta)}"
+               f"{' · ' + carrera if carrera else ''}{' · ' + modo if modo else ''}: no se generó la presentación.")
+        return None
+    presentation_id, url = generar_presentacion_stats(
+        creds, filas, desde=desde, hasta=hasta,
+        subtitulo_presentacion=subtitulo_presentacion(filas, carrera, modo),
+        id_master=id_master, carpeta_destino_id=carpeta_destino_id,
+        nombre_archivo=nombre_archivo or nombre_presentacion(desde, hasta, carrera, modo),
+        avisar=avisar,
+    )
+    return presentation_id, url, len(filas)
+
+
 # ==============================================================================
-# PRUEBA STANDALONE (correr `python generar_presentacion_stats.py <hoja_del_dia>` a mano)
+# PRUEBA STANDALONE (correr a mano, ver el bloque de abajo)
 # ==============================================================================
 
 if __name__ == "__main__":
+    import argparse
     from main import autenticar_google_cli, construir_servicio_sheets
 
-    if len(sys.argv) != 2:
-        raise SystemExit("Uso: python generar_presentacion_stats.py <hoja_del_dia>   (ej. 2026-10-08)")
-    hoja_de_prueba = sys.argv[1]
+    parser = argparse.ArgumentParser(description="Genera una presentación de prueba a partir del Histórico.")
+    parser.add_argument("desde", help="fecha de inicio, AAAA-MM-DD (ej. 2026-10-08)")
+    parser.add_argument("hasta", nargs="?", help="fecha de fin, AAAA-MM-DD (por defecto, igual a desde)")
+    parser.add_argument("--carrera", help="solo esa carrera (nombre exacto, sin importar tildes)")
+    parser.add_argument("--modo", choices=[MODO_COHORTE, MODO_MIXTO], help="solo cohortes o solo conjuntos mixtos")
+    args = parser.parse_args()
+    desde = date.fromisoformat(args.desde)
+    hasta = date.fromisoformat(args.hasta) if args.hasta else desde
 
     creds = autenticar_google_cli()
-    servicio_sheets = construir_servicio_sheets(creds)
-
-    filas = leer_filas_hoja_como_diccionarios(servicio_sheets, os.environ["ID_SPREADSHEET"], hoja_de_prueba)
-    if not filas:
-        raise SystemExit(f"No hay filas en la hoja '{hoja_de_prueba}' para calcular métricas.")
-    print("Headers reales de la hoja:", list(filas[0].keys()))
-
-    generar_presentacion_stats(
-        creds,
-        filas,
-        fecha_iso=hoja_de_prueba,
-        nombre_archivo=f"PRUEBA — Estadísticas DP — {hoja_de_prueba}",
-        subtitulo_presentacion=subtitulo_desde_filas(filas),
+    resultado = generar_presentacion_desde_historico(
+        creds, construir_servicio_sheets(creds), os.environ["ID_SPREADSHEET"], desde, hasta,
+        carrera=args.carrera, modo=args.modo,
+        nombre_archivo="PRUEBA — " + nombre_presentacion(desde, hasta, args.carrera, args.modo),
     )
+    if resultado:
+        print(f"{resultado[2]} perfiles en la presentación.")
