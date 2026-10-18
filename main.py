@@ -1889,9 +1889,9 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
     total_pdfs = len(lista_pdfs)
     _avisar(f"Se encontraron {total_pdfs} perfiles para analizar.\n", 0, total_pdfs)
 
-    # Subcarpeta de 'Analizados' del día (se crea una sola vez si no existe).
+    # Subcarpeta de 'Analizados' del día (se crea una sola vez si no existe). Si
+    # ID_CARPETA_ANALIZADOS no está configurada, los PDFs quedan en la carpeta de origen.
     carpeta_analizados_hoy = None
-    # Lo comento solo para seguir con las pruebas. Luego descomentar para que se muevan los perfiles
     if ID_CARPETA_ANALIZADOS:
         carpeta_analizados_hoy = obtener_o_crear_subcarpeta(
             servicio_drive, ID_CARPETA_ANALIZADOS, fecha_iso
