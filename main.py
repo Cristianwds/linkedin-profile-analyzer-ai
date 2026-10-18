@@ -67,12 +67,7 @@ NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
 # carga los números, barras y anillos con formas nativas. Al terminar cada corrida se genera una
 # por cohorte (o una con los mixtos del día), y desde la web se puede pedir una por rango de fechas
 # (ver generar_presentacion_de_la_corrida y generar_presentacion_por_rango).
-#
-# ID_PRESENTACION_STATS es la plantilla VIEJA, con gráficos vinculados a la planilla: solo se usa
-# como respaldo si ID_PRESENTACION_MASTER_STATS no está configurada (refresca sus gráficos y deja
-# una copia congelada por corrida en ID_CARPETA_PRESENTACIONES/<fecha>).
 ID_PRESENTACION_MASTER_STATS = os.getenv('ID_PRESENTACION_MASTER_STATS')
-ID_PRESENTACION_STATS = os.getenv('ID_PRESENTACION_STATS')
 ID_CARPETA_PRESENTACIONES = os.getenv('ID_CARPETA_PRESENTACIONES')
 
 # Zona horaria fija para la fecha de cada corrida: Cloud Run corre en UTC, así que con un
@@ -1000,14 +995,6 @@ def construir_servicio_sheets(creds):
         print(f"Error al construir el servicio de Sheets: {e}")
         return None
 
-def construir_servicio_slides(creds):
-    """Arma el cliente de Slides a partir de un objeto Credentials ya resuelto."""
-    try:
-        return build('slides', 'v1', credentials=creds)
-    except Exception as e:
-        print(f"Error al construir el servicio de Slides: {e}")
-        return None
-
 def construir_servicio_docs(creds):
     """Arma el cliente de Docs a partir de un objeto Credentials ya resuelto."""
     try:
@@ -1018,14 +1005,6 @@ def construir_servicio_docs(creds):
 
 NOMBRE_HOJA_PLANTILLA = "Plantilla"
 NOMBRE_HOJA_HISTORICO = "Histórico"
-NOMBRE_HOJA_ESTADISTICAS_DIA = "Estadísticas del día"  # así se llama en la planilla (con "d" minúscula)
-
-# OBJECT_IDS_GRAFICOS_STATS ya no existe: refrescar_graficos_slides() y
-# desvincular_graficos_slides() encuentran los gráficos vinculados solas (leyendo la
-# presentación con presentations().get() y buscando la propiedad 'sheetsChart' en cada
-# elemento), así que agregar/sacar/reordenar gráficos en la plantilla no requiere tocar este
-# archivo. listar_graficos_slides.py queda solo como herramienta de inspección manual si alguna
-# vez hace falta ver a mano qué objectId tiene cada gráfico.
 
 def _obtener_metadata_hojas(servicio_sheets, spreadsheet_id):
     """Devuelve la lista de propiedades (sheetId, title, index) de cada hoja del spreadsheet."""
@@ -1085,34 +1064,31 @@ ETIQUETA_ACCION = "Próxima Acción: "
 
 def obtener_o_crear_hoja_historico(servicio_sheets, spreadsheet_id, año):
     """
-    Devuelve (nombre_hoja, nombre_hoja_anterior) para la hoja Histórico del año dado.
+    Devuelve el nombre de la hoja Histórico del año dado.
 
     'Histórico' dejó de ser una única hoja fija para siempre: ahora hay una por año
     ('Histórico 2026', 'Histórico 2027', ...), para que no crezca sin límite. Esta función:
 
-      1. Si ya existe 'Histórico {año}', la reutiliza tal cual (nombre_hoja_anterior=None: no
-         cambió nada respecto a la corrida anterior, no hay fórmulas que reescribir).
+      1. Si ya existe 'Histórico {año}', la reutiliza tal cual.
       2. Si no existe pero todavía queda la hoja vieja sin año ('Histórico', de antes de este
          cambio), la migra: la renombra in-place a 'Histórico {año}' — conserva todos los datos
-         que ya tenía. Devuelve nombre_hoja_anterior='Histórico'.
+         que ya tenía.
       3. Si no existe ninguna de las dos, busca la hoja 'Histórico {año}' más reciente que haya
          (típicamente la del año anterior), la duplica, renombra la copia y le borra todas las
-         filas de datos (deja encabezado, columnas y formato intactos). Devuelve
-         nombre_hoja_anterior=<esa hoja fuente>.
+         filas de datos (deja encabezado, columnas y formato intactos).
       4. Si no hay absolutamente ninguna hoja Histórico (instalación nueva desde cero), corta
          con un error pidiendo crear 'Histórico {año}' a mano una vez — mismo criterio que ya
          usa obtener_o_crear_hoja_diaria con 'Plantilla'.
 
-    En los casos 2 y 3, el caller tiene que llamar después a
-    actualizar_referencia_historico_en_estadisticas() con el nombre_hoja_anterior devuelto, para
-    que las fórmulas de 'Estadísticas del día' sigan apuntando a la hoja correcta.
+    Las hojas 'Estadísticas' y 'Estadísticas del día' de la planilla cuentan del Histórico con
+    fórmulas que nombran el año ('Histórico 2026'!G:G): con un año nuevo hay que actualizarlas a mano.
     """
     nombre_objetivo = f"{NOMBRE_HOJA_HISTORICO} {año}"
     hojas = _obtener_metadata_hojas(servicio_sheets, spreadsheet_id)
     titulos = {hoja['title']: hoja['sheetId'] for hoja in hojas}
 
     if nombre_objetivo in titulos:
-        return nombre_objetivo, None
+        return nombre_objetivo
 
     # Migración: la hoja vieja sin año todavía existe con ese nombre plano.
     if NOMBRE_HOJA_HISTORICO in titulos:
@@ -1127,7 +1103,7 @@ def obtener_o_crear_hoja_historico(servicio_sheets, spreadsheet_id, año):
         servicio_sheets.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=peticion).execute()
         print(f"   [ℹ️ Migración automática: '{NOMBRE_HOJA_HISTORICO}' pasa a llamarse '{nombre_objetivo}' "
               f"(conserva todos los datos que ya tenía).]")
-        return nombre_objetivo, NOMBRE_HOJA_HISTORICO
+        return nombre_objetivo
 
     # Buscamos la hoja "Histórico {año}" más reciente que exista, para usarla como base.
     patron_anio = re.compile(rf'^{re.escape(NOMBRE_HOJA_HISTORICO)} (\d{{4}})$')
@@ -1160,7 +1136,7 @@ def obtener_o_crear_hoja_historico(servicio_sheets, spreadsheet_id, año):
     ).execute()
 
     print(f"   [📄 Hoja nueva creada para el año {año}: '{nombre_objetivo}' (copiada de '{nombre_fuente}', sin las filas de datos).]")
-    return nombre_objetivo, nombre_fuente
+    return nombre_objetivo
 
 def _construir_texto_observacion(resultado):
     """Arma el texto de la columna Observación a partir de los 3 campos separados de la IA."""
@@ -1202,9 +1178,7 @@ def _parsear_fila_inicio(rango_actualizado):
 
 
 def _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, nombre_hoja):
-    """Sin distinguir mayúsculas, igual que los rangos de la API de Sheets ('Hoja'!A1): antes la
-    comparación era exacta y "Estadísticas del Día" no encontraba la hoja real, "Estadísticas
-    del día", aunque leer y escribir valores con el mismo nombre sí funcionaba."""
+    """Sin distinguir mayúsculas, igual que los rangos de la API de Sheets ('Hoja'!A1)."""
     hojas = _obtener_metadata_hojas(servicio_sheets, spreadsheet_id)
     for hoja in hojas:
         if hoja['title'].casefold() == nombre_hoja.casefold():
@@ -1330,8 +1304,8 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
 
     modo: "Cohorte" o "Mixto", según el tipo de corrida. Con Fecha, Carrera y Modo se arma cada
     presentación de estadísticas (ver generar_presentacion_stats.generar_presentacion_desde_historico).
-    Va al final de la tabla a propósito: las fórmulas de 'Estadísticas del día' apuntan a las
-    columnas por letra, y agregarla en el medio las corría."""
+    Va al final de la tabla a propósito: las hojas 'Estadísticas' y 'Estadísticas del día' de la
+    planilla cuentan con fórmulas que apuntan a las columnas por letra, y agregarla en el medio las corría."""
     print(f"Escribiendo datos en '{nombre_hoja_historico}'...")
 
     valores = []
@@ -1378,217 +1352,6 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
             )
     except Exception as e:
         avisar(f"❌ No se pudo escribir en '{nombre_hoja_historico}': {_resumir_error(e)}")
-
-def actualizar_referencia_historico_en_estadisticas(servicio_sheets, spreadsheet_id, nombre_hoja_anterior, nombre_hoja_nueva, avisar=print):
-    """
-    Cuando obtener_o_crear_hoja_historico() migra o crea una hoja Histórico nueva, las fórmulas
-    COUNTIFS de 'Estadísticas del día' quedan armadas a mano apuntando al nombre VIEJO de esa
-    hoja (ej. 'Histórico 2026'!G:G). Esta función las busca y les reemplaza el nombre viejo por
-    el nuevo, para que sigan sumando del año que corresponde sin tocar nada a mano en enero.
-
-    Solo toca fórmulas que mencionan '{nombre_hoja_anterior}'! entre comillas simples (la forma
-    en que Sheets referencia una hoja con espacios en el nombre) — no toca ninguna otra celda.
-    No hace nada si nombre_hoja_anterior es None (caso normal: no cambió el año).
-    """
-    if not nombre_hoja_anterior or nombre_hoja_anterior == nombre_hoja_nueva:
-        return
-
-    sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, NOMBRE_HOJA_ESTADISTICAS_DIA)
-    if sheet_id is None:
-        avisar(f"   [⚠️ No se encontró la hoja '{NOMBRE_HOJA_ESTADISTICAS_DIA}'; no se actualizaron fórmulas.]")
-        return
-
-    resultado = servicio_sheets.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id,
-        range=f"'{NOMBRE_HOJA_ESTADISTICAS_DIA}'",
-        valueRenderOption='FORMULA'
-    ).execute()
-    filas = resultado.get('values', [])
-
-    referencia_vieja = f"'{nombre_hoja_anterior}'!"
-    referencia_nueva = f"'{nombre_hoja_nueva}'!"
-
-    pedidos = []
-    for fila_idx, fila in enumerate(filas):
-        for col_idx, valor in enumerate(fila):
-            if isinstance(valor, str) and valor.startswith('=') and referencia_vieja in valor:
-                pedidos.append({
-                    'updateCells': {
-                        'rows': [{'values': [{'userEnteredValue': {'formulaValue': valor.replace(referencia_vieja, referencia_nueva)}}]}],
-                        'fields': 'userEnteredValue.formulaValue',
-                        'range': {
-                            'sheetId': sheet_id,
-                            'startRowIndex': fila_idx, 'endRowIndex': fila_idx + 1,
-                            'startColumnIndex': col_idx, 'endColumnIndex': col_idx + 1
-                        }
-                    }
-                })
-
-    if not pedidos:
-        print(f"   [ℹ️ No se encontraron fórmulas en '{NOMBRE_HOJA_ESTADISTICAS_DIA}' que mencionaran "
-              f"'{nombre_hoja_anterior}'; no había nada que actualizar.]")
-        return
-
-    try:
-        servicio_sheets.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={'requests': pedidos}).execute()
-        print(f"   [🔧 Se actualizaron {len(pedidos)} fórmula(s) en '{NOMBRE_HOJA_ESTADISTICAS_DIA}': "
-              f"'{nombre_hoja_anterior}' → '{nombre_hoja_nueva}'.]")
-    except Exception as e:
-        avisar(f"   [⚠️ No se pudieron actualizar las fórmulas de '{NOMBRE_HOJA_ESTADISTICAS_DIA}' automáticamente "
-               f"— revisalas a mano (buscar '{nombre_hoja_anterior}' y cambiarlo por '{nombre_hoja_nueva}'): {_resumir_error(e)}]")
-
-def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha_hoy, avisar=print):
-    """
-    Escribe la fecha de hoy en B1 de 'Estadísticas del día'. Esa hoja tiene fórmulas COUNTIFS
-    que filtran 'Histórico' por esa fecha (columna A), así que no hace falta calcular ningún
-    porcentaje acá: al cambiar B1, los conteos —y los gráficos vinculados en el Slides que
-    apuntan a ellos— se recalculan solos.
-    """
-    try:
-        servicio_sheets.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range=f"'{NOMBRE_HOJA_ESTADISTICAS_DIA}'!B1",
-            valueInputOption='USER_ENTERED',
-            body={'values': [[fecha_hoy]]}
-        ).execute()
-        print(f"✅ Fecha de '{NOMBRE_HOJA_ESTADISTICAS_DIA}' actualizada a {fecha_hoy}.")
-    except Exception as e:
-        avisar(f"   [⚠️ No se pudo actualizar '{NOMBRE_HOJA_ESTADISTICAS_DIA}': {_resumir_error(e)}]")
-
-def refrescar_graficos_slides(servicio_slides, id_presentacion, avisar=print):
-    """
-    Fuerza el refresh de TODOS los gráficos vinculados (sheetsChart) insertados en la
-    presentación, para que reflejen los valores recién escritos en 'Estadísticas del día'.
-
-    Ya no depende de una lista fija de object_id a mantener a mano: lee la presentación con
-    presentations().get(), recorre sus slides, y encuentra sola cualquier elemento que tenga la
-    propiedad 'sheetsChart' — mismo mecanismo de detección que ya usa
-    desvincular_graficos_slides() sobre las copias. Así, agregar/sacar/reordenar gráficos en la
-    plantilla en Slides ya no requiere volver a correr listar_graficos_slides.py ni tocar main.py.
-    """
-    if not id_presentacion:
-        return
-
-    try:
-        presentacion = servicio_slides.presentations().get(presentationId=id_presentacion).execute()
-    except Exception as e:
-        avisar(f"   [⚠️ No se pudo leer la presentación para refrescar sus gráficos: {_resumir_error(e)}]")
-        return
-
-    object_ids = [
-        elemento['objectId']
-        for slide in presentacion.get('slides', [])
-        for elemento in slide.get('pageElements', [])
-        if elemento.get('sheetsChart')
-    ]
-
-    if not object_ids:
-        avisar("   [⚠️ No se encontraron gráficos vinculados en la plantilla de estadísticas: no hay nada que refrescar.]")
-        return
-
-    peticiones = [{'refreshSheetsChart': {'objectId': oid}} for oid in object_ids]
-    try:
-        servicio_slides.presentations().batchUpdate(
-            presentationId=id_presentacion,
-            body={'requests': peticiones}
-        ).execute()
-        print(f"✅ Se refrescaron {len(object_ids)} gráficos en el Slides de estadísticas.")
-    except Exception as e:
-        avisar(f"   [⚠️ No se pudieron refrescar los gráficos del Slides: {_resumir_error(e)}]")
-
-
-def generar_copia_presentacion_estadisticas(servicio_drive, id_plantilla, id_carpeta_destino, nombre_archivo, avisar=print):
-    """
-    Copia la presentación PLANTILLA de estadísticas (ID_PRESENTACION_STATS) a un archivo nuevo,
-    igual que generar_documento_informe hace con los informes individuales. Llamar DESPUÉS de
-    refrescar_graficos_slides sobre la plantilla, para que la copia salga con los gráficos ya
-    actualizados a los valores de esta corrida.
-
-    OJO: recién copiada, esta presentación TODAVÍA tiene los gráficos vinculados (linkingMode
-    LINKED) a la hoja 'Estadísticas del día' — Drive copia el archivo tal cual, vínculos
-    incluidos. Llamar a desvincular_graficos_slides() sobre el ID que devuelve esta función (NO
-    sobre la plantilla) para dejarla como imagen fija y que quede realmente congelada.
-
-    Devuelve el ID de la presentación nueva, o None si falló.
-    """
-    try:
-        metadata_copia = {
-            'name': nombre_archivo,
-            'parents': [id_carpeta_destino]
-        }
-        copia = servicio_drive.files().copy(
-            fileId=id_plantilla,
-            body=metadata_copia,
-            fields='id',
-            supportsAllDrives=True
-        ).execute()
-        id_copia = copia.get('id')
-        print(f"✅ Presentación de estadísticas de esta corrida: '{nombre_archivo}' (ID: {id_copia}).")
-        return id_copia
-    except Exception as e:
-        avisar(f"   [⚠️ No se pudo generar la copia de la presentación de estadísticas: {_resumir_error(e)}]")
-        return None
-
-
-def desvincular_graficos_slides(servicio_slides, id_presentacion, avisar=print):
-    """
-    Convierte TODOS los gráficos vinculados (sheetsChart) de una presentación en imágenes fijas
-    — el mismo efecto que el botón "Desvincular" del propio Slides, pero hecho por código.
-
-    IMPORTANTE: llamar esto SOLO sobre una COPIA (el ID que devuelve
-    generar_copia_presentacion_estadisticas), nunca sobre la plantilla (ID_PRESENTACION_STATS).
-    Si se desvincula la plantilla por error, deja de tener gráficos vinculados y las próximas
-    corridas no van a poder refrescar nada — refrescar_graficos_slides() ya no va a encontrar
-    ningún elemento con la propiedad 'sheetsChart' ahí adentro.
-
-    Cómo encuentra los gráficos de la copia: la API de Slides no tiene un request de
-    "desvincular" directo. Primero se lee la copia entera con presentations().get() y se
-    recorren sus slides buscando cualquier elemento con la propiedad 'sheetsChart' — mismo
-    mecanismo de búsqueda que usa refrescar_graficos_slides() sobre la plantilla, aplicado acá
-    sobre la copia. Por cada uno encontrado se arma un par de requests: deleteObject (borra el
-    vinculado) + createSheetsChart con linkingMode NOT_LINKED_IMAGE (lo reemplaza por una imagen
-    fija, en la misma página, tamaño y posición que tenía).
-    """
-    try:
-        presentacion = servicio_slides.presentations().get(presentationId=id_presentacion).execute()
-    except Exception as e:
-        avisar(f"   [⚠️ No se pudo leer la copia para desvincular sus gráficos: {_resumir_error(e)}]")
-        return
-
-    peticiones = []
-    for slide in presentacion.get('slides', []):
-        pagina_id = slide.get('objectId')
-        for elemento in slide.get('pageElements', []):
-            grafico_vinculado = elemento.get('sheetsChart')
-            if not grafico_vinculado:
-                continue  # no es un gráfico de Sheets, es otro tipo de elemento (texto, imagen, etc.)
-
-            peticiones.append({'deleteObject': {'objectId': elemento['objectId']}})
-            peticiones.append({
-                'createSheetsChart': {
-                    'spreadsheetId': grafico_vinculado['spreadsheetId'],
-                    'chartId': grafico_vinculado['chartId'],
-                    'linkingMode': 'NOT_LINKED_IMAGE',
-                    'elementProperties': {
-                        'pageObjectId': pagina_id,
-                        'size': elemento['size'],
-                        'transform': elemento['transform'],
-                    }
-                }
-            })
-
-    if not peticiones:
-        print("   [ℹ️ No se encontraron gráficos vinculados en la copia (¿ya estaba desvinculada?).]")
-        return
-
-    try:
-        servicio_slides.presentations().batchUpdate(
-            presentationId=id_presentacion, body={'requests': peticiones}
-        ).execute()
-        print(f"✅ Se desvincularon {len(peticiones) // 2} gráficos en la copia — quedó como imagen fija.")
-    except Exception as e:
-        avisar(f"   [⚠️ No se pudieron desvincular los gráficos de la copia (quedó con los gráficos "
-               f"vinculados: si alguien les da 'Actualizar', van a cambiar): {_resumir_error(e)}]")
 
 
 # Subcarpetas de ID_CARPETA_PRESENTACIONES, igual que los informes (Cohorte / Mezclado), más una
@@ -2084,46 +1847,15 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
         nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
         escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy, avisar=_avisar)
 
-        nombre_hoja_historico, nombre_hoja_historico_anterior = obtener_o_crear_hoja_historico(
-            servicio_sheets, ID_SPREADSHEET, hoy.year
-        )
-        actualizar_referencia_historico_en_estadisticas(
-            servicio_sheets, ID_SPREADSHEET, nombre_hoja_historico_anterior, nombre_hoja_historico, avisar=_avisar
-        )
+        nombre_hoja_historico = obtener_o_crear_hoja_historico(servicio_sheets, ID_SPREADSHEET, hoy.year)
         modo_corrida = presentacion_stats.MODO_COHORTE if carrera_cohorte else presentacion_stats.MODO_MIXTO
         escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy,
                                   nombre_hoja_historico, modo=modo_corrida, avisar=_avisar)
-
-        actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy, avisar=_avisar)
 
         if ID_PRESENTACION_MASTER_STATS:
             id_presentacion_generada = generar_presentacion_de_la_corrida(
                 creds, servicio_sheets, servicio_drive, hoy.date(), carrera_cohorte, avisar=_avisar
             )
-        elif ID_PRESENTACION_STATS:
-            # Respaldo: plantilla vieja con gráficos vinculados (ver ID_PRESENTACION_STATS arriba).
-            servicio_slides = construir_servicio_slides(creds)
-            if not servicio_slides:
-                _avisar("⚠️ No se pudo conectar con Google Slides: no se actualizó la presentación de estadísticas.")
-            else:
-                refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS, avisar=_avisar)
-                if ID_CARPETA_PRESENTACIONES:
-                    carpeta_presentaciones_hoy = obtener_o_crear_subcarpeta(
-                        servicio_drive, ID_CARPETA_PRESENTACIONES, fecha_iso
-                    )
-                    nombre_presentacion = f"Estadísticas_{hoy.strftime('%Y-%m-%d_%H%M')}"
-                    id_presentacion_generada = generar_copia_presentacion_estadisticas(
-                        servicio_drive, ID_PRESENTACION_STATS, carpeta_presentaciones_hoy, nombre_presentacion,
-                        avisar=_avisar
-                    )
-                    if id_presentacion_generada:
-                        # OJO: se desvincula la COPIA (id_presentacion_generada), NUNCA la plantilla
-                        # (ID_PRESENTACION_STATS) — la plantilla tiene que seguir vinculada para que
-                        # refrescar_graficos_slides() funcione en la próxima corrida.
-                        desvincular_graficos_slides(servicio_slides, id_presentacion_generada, avisar=_avisar)
-                else:
-                    print("   [ℹ️ ID_CARPETA_PRESENTACIONES no está configurada: se actualizó la plantilla "
-                          "en el lugar, sin generar una copia nueva para esta corrida.]")
 
     # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
     servicio_docs = construir_servicio_docs(creds) if ID_PLANTILLA_INFORME and resultados_finales else None
@@ -2235,8 +1967,7 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
 
     id_presentacion_generada: ID de la presentación de estadísticas de esta corrida (la de su
     cohorte o la de los mixtos del día, ver generar_presentacion_de_la_corrida), si se pudo crear.
-    Si es None y se usa la plantilla nueva, no hay link (el aviso del error ya está en el resumen).
-    Solo con la plantilla vieja de respaldo, el link cae en esa plantilla.
+    Si es None, no hay link (si fue por un error, el aviso ya está en el resumen).
 
     problemas: lista de mensajes de aviso/error de la corrida (ver _avisar en ejecutar_pipeline),
     para que la web los muestre aparte en el resumen en vez de dejarlos perdidos en el log.
@@ -2278,8 +2009,6 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
         links["carpeta_informes"] = f"https://drive.google.com/drive/folders/{ID_CARPETA_INFORMES}"
     if id_presentacion_generada:
         links["presentacion_estadisticas"] = f"https://docs.google.com/presentation/d/{id_presentacion_generada}/edit"
-    elif ID_PRESENTACION_STATS and not ID_PRESENTACION_MASTER_STATS:
-        links["presentacion_estadisticas"] = f"https://docs.google.com/presentation/d/{ID_PRESENTACION_STATS}/edit"
 
     return {
         "fecha": fecha_hoy,

@@ -108,7 +108,6 @@ ID_CARPETA_INFORMES: "id_carpeta_destino_informes"
 ID_CARPETA_ANALIZADOS: "id_carpeta_pdfs_analizados"
 ID_PLANTILLA_INFORME: "id_Informe_modelo"
 ID_PRESENTACION_MASTER_STATS: "id_de_Plantilla_DP_version3"
-ID_PRESENTACION_STATS: "tu_id_de_presentacion"
 ID_CARPETA_PRESENTACIONES: "id_carpeta_destino_presentaciones"
 GEMINI_API_KEY: "tu_api_key_de_gemini"
 GROQ_API_KEY: "tu_key_de_groq"
@@ -177,7 +176,7 @@ Notas:
 
 ```
 main.py                        # pipeline principal (Drive -> IA -> Sheets/Docs/Slides)
-generar_presentacion_stats.py  # presentación de estadísticas del día, desde la plantilla
+generar_presentacion_stats.py  # presentaciones de estadísticas desde el Histórico, con la plantilla
                                #   ID_PRESENTACION_MASTER_STATS (para probarla sola:
                                #   python generar_presentacion_stats.py <desde> [<hasta>])
 web_app.py                     # backend FastAPI que envuelve el pipeline para la web
