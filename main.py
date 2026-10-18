@@ -1013,7 +1013,7 @@ def construir_servicio_docs(creds):
 
 NOMBRE_HOJA_PLANTILLA = "Plantilla"
 NOMBRE_HOJA_HISTORICO = "Histórico"
-NOMBRE_HOJA_ESTADISTICAS_DIA = "Estadísticas del Día" 
+NOMBRE_HOJA_ESTADISTICAS_DIA = "Estadísticas del día"  # así se llama en la planilla (con "d" minúscula)
 
 # OBJECT_IDS_GRAFICOS_STATS ya no existe: refrescar_graficos_slides() y
 # desvincular_graficos_slides() encuentran los gráficos vinculados solas (leyendo la
@@ -1197,9 +1197,12 @@ def _parsear_fila_inicio(rango_actualizado):
 
 
 def _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, nombre_hoja):
+    """Sin distinguir mayúsculas, igual que los rangos de la API de Sheets ('Hoja'!A1): antes la
+    comparación era exacta y "Estadísticas del Día" no encontraba la hoja real, "Estadísticas
+    del día", aunque leer y escribir valores con el mismo nombre sí funcionaba."""
     hojas = _obtener_metadata_hojas(servicio_sheets, spreadsheet_id)
     for hoja in hojas:
-        if hoja['title'] == nombre_hoja:
+        if hoja['title'].casefold() == nombre_hoja.casefold():
             return hoja['sheetId']
     return None
 
