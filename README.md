@@ -151,7 +151,8 @@ Notas:
   mano dentro del contenedor.
 - `GCS_BUCKET_ESTADO` es obligatoria en Cloud Run (disco efímero): sin ella se pierden los
   tokens de login de cada persona, la caché de análisis y la config de carreras en cada reinicio
-  de la instancia.
+  de la instancia. En tu compu se ignora aunque esté en el `.env` (se usan los archivos locales),
+  salvo que definas también `USAR_BUCKET_EN_LOCAL=1`; `sincronizar_estado_bucket.py` lo hace solo.
 - El estado de las corridas del pipeline vive en memoria del proceso (`web_app.py`), pensado
   para un solo worker/instancia. Si se necesita escalar a más de una instancia concurrente, ese
   estado tiene que pasar a algo compartido (ej. Firestore).

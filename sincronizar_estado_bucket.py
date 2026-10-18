@@ -39,9 +39,13 @@ import sys
 
 from dotenv import load_dotenv
 
+import almacenamiento_estado
+
 load_dotenv()
 
-import almacenamiento_estado  # noqa: E402  (tiene que importarse DESPUÉS de load_dotenv)
+# Este script existe justamente para escribir en el bucket desde tu compu: fuera de Cloud Run,
+# almacenamiento_estado ignora el bucket salvo que se pida explícitamente (ver su docstring).
+os.environ["USAR_BUCKET_EN_LOCAL"] = "1"
 
 CARPETA_PLANES = "planes_de_estudio"
 NIVELES = ("grado", "posgrado")
@@ -157,11 +161,11 @@ def main():
         elif arg.startswith("--sobrescribir="):
             sobrescribir = {n.strip() for n in arg.split("=", 1)[1].split(",") if n.strip()}
 
-    if not almacenamiento_estado.BUCKET_ESTADO:
+    if not almacenamiento_estado.nombre_bucket():
         print("❌ Falta GCS_BUCKET_ESTADO en el .env: no sé a qué bucket subir.")
         sys.exit(1)
 
-    print(f"Bucket: {almacenamiento_estado.BUCKET_ESTADO}")
+    print(f"Bucket: {almacenamiento_estado.nombre_bucket()}")
     if aplicar:
         extra = ""
         if sobrescribir is True:
