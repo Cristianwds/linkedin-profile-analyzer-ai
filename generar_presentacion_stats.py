@@ -107,18 +107,6 @@ COLUMNA_EDUCACION = "Estado Educación"
 COLUMNA_CERTIFICACIONES = "Estado Certificaciones"
 COLUMNA_APTITUDES = "Estado Aptitudes"
 
-TOKENS_ESPERADOS = [
-    "FECHA_CORRIDA", "CANT_ALUMNOS", "TITULO_PRESENTACION", "SUBTITULO_PRESENTACION",
-    "SEMAFORO_VERDE_PCT", "SEMAFORO_AMARILLO_PCT", "SEMAFORO_ROJO_PCT",
-    "TITULAR_APROBADO_PCT", "TITULAR_MEJORAR_PCT", "TITULAR_NODETECTADO_PCT",
-    "URL_APROBADO_PCT", "URL_MEJORAR_PCT",
-    "ACERCADE_APROBADO_PCT", "ACERCADE_MEJORAR_PCT", "ACERCADE_NODETECTADO_PCT",
-    "EXPERIENCIA_APROBADO_PCT", "EXPERIENCIA_MEJORAR_PCT", "EXPERIENCIA_NODETECTADO_PCT",
-    "EDUCACION_APROBADO_PCT",
-    "CERTIFICACIONES_APROBADO_PCT", "CERTIFICACIONES_MEJORAR_PCT", "CERTIFICACIONES_NODETECTADO_PCT",
-    "APTITUDES_APROBADO_PCT", "APTITUDES_MEJORAR_PCT", "APTITUDES_NODETECTADO_PCT",
-]
-
 # Colores del sistema: verde=Aprobado, amarillo=A Mejorar, rojo=No detectado (y Verde/Amarillo/Rojo
 # en el semáforo).
 CANTIDAD_CELDAS = 20  # grilla de aptitudes y anillos: cada celda o segmento representa 100/20 = 5%
@@ -236,9 +224,9 @@ def _porcentaje_entero(cantidad, total):
     return round(100 * cantidad / total)
 
 
-def calcular_metricas_del_dia(filas):
+def calcular_metricas(filas):
     """
-    Recibe las filas del día (ver leer_filas_hoja_como_diccionarios) y devuelve un
+    Recibe las filas a resumir (de leer_filas_historico, ya filtradas) y devuelve un
     diccionario {NOMBRE: valor} con CANT_ALUMNOS (int, cantidad de filas) y un porcentaje
     entero (0-100) por cada categoría/estado real que produce el pipeline. No se inventan
     sub-métricas nuevas: son exactamente las columnas y estados que ya salen en la planilla.
@@ -323,9 +311,9 @@ def _buscar_archivo_por_nombre_en_carpeta(servicio_drive, carpeta_id, nombre):
     return archivos[0]["id"] if archivos else None
 
 
-def duplicar_o_reemplazar_presentacion_del_dia(servicio_drive, id_master, carpeta_destino_id, nombre_archivo):
+def duplicar_o_reemplazar_presentacion(servicio_drive, id_master, carpeta_destino_id, nombre_archivo):
     """Duplica el master hacia carpeta_destino_id. Si ya existe una presentación con ese
-    nombre (el pipeline ya corrió hoy), la manda a la papelera y arranca de una copia limpia
+    nombre (por ejemplo, la misma cohorte corrida otra vez ese día), la manda a la papelera y arranca de una copia limpia
     del master — nunca reutiliza una copia ya completada, porque ahí ya no quedan tokens.
 
     El master (y potencialmente la carpeta de destino) viven en un Drive compartido, así que
@@ -711,11 +699,11 @@ def generar_presentacion_stats(
     servicio_drive = construir_servicio_drive(creds)
     servicio_slides = build("slides", "v1", credentials=creds)
 
-    metricas = calcular_metricas_del_dia(filas)
+    metricas = calcular_metricas(filas)
     mapa_tokens_texto = formatear_tokens_texto(metricas, texto_periodo(desde, hasta), titulo_presentacion,
                                                subtitulo_presentacion)
 
-    presentation_id = duplicar_o_reemplazar_presentacion_del_dia(
+    presentation_id = duplicar_o_reemplazar_presentacion(
         servicio_drive, id_master, carpeta_destino_id, nombre_archivo
     )
 

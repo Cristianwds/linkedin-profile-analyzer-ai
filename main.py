@@ -1105,7 +1105,7 @@ def obtener_o_crear_hoja_historico(servicio_sheets, spreadsheet_id, año):
 
     En los casos 2 y 3, el caller tiene que llamar después a
     actualizar_referencia_historico_en_estadisticas() con el nombre_hoja_anterior devuelto, para
-    que las fórmulas de 'Estadísticas del Día' sigan apuntando a la hoja correcta.
+    que las fórmulas de 'Estadísticas del día' sigan apuntando a la hoja correcta.
     """
     nombre_objetivo = f"{NOMBRE_HOJA_HISTORICO} {año}"
     hojas = _obtener_metadata_hojas(servicio_sheets, spreadsheet_id)
@@ -1382,7 +1382,7 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
 def actualizar_referencia_historico_en_estadisticas(servicio_sheets, spreadsheet_id, nombre_hoja_anterior, nombre_hoja_nueva, avisar=print):
     """
     Cuando obtener_o_crear_hoja_historico() migra o crea una hoja Histórico nueva, las fórmulas
-    COUNTIFS de 'Estadísticas del Día' quedan armadas a mano apuntando al nombre VIEJO de esa
+    COUNTIFS de 'Estadísticas del día' quedan armadas a mano apuntando al nombre VIEJO de esa
     hoja (ej. 'Histórico 2026'!G:G). Esta función las busca y les reemplaza el nombre viejo por
     el nuevo, para que sigan sumando del año que corresponde sin tocar nada a mano en enero.
 
@@ -1439,7 +1439,7 @@ def actualizar_referencia_historico_en_estadisticas(servicio_sheets, spreadsheet
 
 def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha_hoy, avisar=print):
     """
-    Escribe la fecha de hoy en B1 de 'Estadísticas del Día'. Esa hoja tiene fórmulas COUNTIFS
+    Escribe la fecha de hoy en B1 de 'Estadísticas del día'. Esa hoja tiene fórmulas COUNTIFS
     que filtran 'Histórico' por esa fecha (columna A), así que no hace falta calcular ningún
     porcentaje acá: al cambiar B1, los conteos —y los gráficos vinculados en el Slides que
     apuntan a ellos— se recalculan solos.
@@ -1458,7 +1458,7 @@ def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha
 def refrescar_graficos_slides(servicio_slides, id_presentacion, avisar=print):
     """
     Fuerza el refresh de TODOS los gráficos vinculados (sheetsChart) insertados en la
-    presentación, para que reflejen los valores recién escritos en 'Estadísticas del Día'.
+    presentación, para que reflejen los valores recién escritos en 'Estadísticas del día'.
 
     Ya no depende de una lista fija de object_id a mantener a mano: lee la presentación con
     presentations().get(), recorre sus slides, y encuentra sola cualquier elemento que tenga la
@@ -1505,7 +1505,7 @@ def generar_copia_presentacion_estadisticas(servicio_drive, id_plantilla, id_car
     actualizados a los valores de esta corrida.
 
     OJO: recién copiada, esta presentación TODAVÍA tiene los gráficos vinculados (linkingMode
-    LINKED) a la hoja 'Estadísticas del Día' — Drive copia el archivo tal cual, vínculos
+    LINKED) a la hoja 'Estadísticas del día' — Drive copia el archivo tal cual, vínculos
     incluidos. Llamar a desvincular_graficos_slides() sobre el ID que devuelve esta función (NO
     sobre la plantilla) para dejarla como imagen fija y que quede realmente congelada.
 
@@ -2233,10 +2233,10 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
     fallidos/exitosos y links directos a Sheets/Slides, pensado para mostrarse tal cual en el
     dashboard web al terminar una corrida.
 
-    id_presentacion_generada: ID de la copia de la presentación de estadísticas generada PARA
-    ESTA CORRIDA (ver generar_copia_presentacion_estadisticas), si se pudo crear. Si es None
-    (ID_CARPETA_PRESENTACIONES no configurada, o falló la copia), el link cae de vuelta a la
-    plantilla — sigue siendo útil, solo que esa vista sí se pisa entre corridas.
+    id_presentacion_generada: ID de la presentación de estadísticas de esta corrida (la de su
+    cohorte o la de los mixtos del día, ver generar_presentacion_de_la_corrida), si se pudo crear.
+    Si es None y se usa la plantilla nueva, no hay link (el aviso del error ya está en el resumen).
+    Solo con la plantilla vieja de respaldo, el link cae en esa plantilla.
 
     problemas: lista de mensajes de aviso/error de la corrida (ver _avisar en ejecutar_pipeline),
     para que la web los muestre aparte en el resumen en vez de dejarlos perdidos en el log.
@@ -2278,7 +2278,7 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
         links["carpeta_informes"] = f"https://drive.google.com/drive/folders/{ID_CARPETA_INFORMES}"
     if id_presentacion_generada:
         links["presentacion_estadisticas"] = f"https://docs.google.com/presentation/d/{id_presentacion_generada}/edit"
-    elif ID_PRESENTACION_STATS:
+    elif ID_PRESENTACION_STATS and not ID_PRESENTACION_MASTER_STATS:
         links["presentacion_estadisticas"] = f"https://docs.google.com/presentation/d/{ID_PRESENTACION_STATS}/edit"
 
     return {

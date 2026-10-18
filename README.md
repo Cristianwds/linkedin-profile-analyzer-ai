@@ -179,7 +179,7 @@ Notas:
 main.py                        # pipeline principal (Drive -> IA -> Sheets/Docs/Slides)
 generar_presentacion_stats.py  # presentación de estadísticas del día, desde la plantilla
                                #   ID_PRESENTACION_MASTER_STATS (para probarla sola:
-                               #   python generar_presentacion_stats.py <hoja_del_dia>)
+                               #   python generar_presentacion_stats.py <desde> [<hasta>])
 web_app.py                     # backend FastAPI que envuelve el pipeline para la web
 static/index.html              # frontend del panel (sin build step)
 extraccion_plan_estudios.py    # utilidad para convertir el PDF de un plan de estudios a .txt
