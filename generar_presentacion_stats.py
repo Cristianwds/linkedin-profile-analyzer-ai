@@ -87,7 +87,8 @@ quedó escrito igual en el master (typo, mayúscula de más, etc.).
 """
 
 import os
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from googleapiclient.discovery import build
 
@@ -510,7 +511,9 @@ def generar_presentacion_stats(
     para hoy, ya con las filas del día leídas de la hoja de resultados.
     Devuelve (presentation_id, url_presentacion).
     """
-    fecha_iso = fecha_iso or date.today().isoformat()
+    # Misma zona horaria que ZONA_HORARIA en main.py (no se importa de ahí para no arrastrar todo
+    # el pipeline al importar este módulo): en Cloud Run, date.today() da la fecha en UTC.
+    fecha_iso = fecha_iso or datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
     id_master = id_master or os.environ["ID_PRESENTACION_MASTER_STATS"]
     carpeta_destino_id = carpeta_destino_id or os.environ["ID_CARPETA_PRESENTACIONES"]
 

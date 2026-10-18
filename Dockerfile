@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+# Sin esto, los print() del pipeline quedan en el buffer de stdout (no es una terminal) y llegan
+# tarde a los logs de Cloud Run, o se pierden si la instancia se corta.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 COPY requirements.txt .

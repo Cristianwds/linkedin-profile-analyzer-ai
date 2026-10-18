@@ -210,6 +210,18 @@
   .tarjeta-metrica.rojo{background:var(--rojo-bg);}
   .tarjeta-metrica.rojo .num{color:var(--rojo);}
 
+  .caja-avisos{
+    background:var(--amarillo-bg);
+    color:var(--amarillo);
+    border-radius:8px;
+    padding:12px 16px;
+    font-size:.85rem;
+    margin-bottom:16px;
+  }
+  .caja-avisos ul{margin:8px 0 0; padding-left:18px; max-height:220px; overflow-y:auto; color:var(--texto);}
+  .caja-avisos li{margin-bottom:4px;}
+  details.detalle-log summary{cursor:pointer; font-size:.85rem; font-weight:600; color:var(--azul);}
+
   .links-resumen{display:flex; gap:10px; flex-wrap:wrap; margin:6px 0 20px;}
   .links-resumen a{
     border:1px solid var(--azul-claro);
@@ -444,6 +456,7 @@
       <div class="panel oculto" id="panel-resumen">
         <h2>Resumen de la corrida</h2>
         <p class="desc" id="resumen-fecha"></p>
+        <div id="avisos-resumen"></div>
 
         <div class="grid-resumen">
           <div class="tarjeta-metrica">
@@ -476,6 +489,11 @@
           </thead>
           <tbody id="tabla-alumnos"></tbody>
         </table>
+
+        <details class="detalle-log" style="margin-top:18px;">
+          <summary>Ver el log completo de la corrida</summary>
+          <div class="log" id="log-resumen" style="margin-top:10px;"></div>
+        </details>
 
         <div style="margin-top:18px;">
           <button class="secundario" id="btn-nueva-corrida">Correr otro análisis</button>
@@ -716,7 +734,7 @@ function monitorearCorrida(runId){
 
     if (d.estado === 'finalizado'){
       clearInterval(intervaloPolling);
-      mostrarResumen(d.resumen);
+      mostrarResumen(d.resumen, d.log);
     } else if (d.estado === 'error'){
       clearInterval(intervaloPolling);
       terminarCorridaConError(d.error || 'Ocurrió un error.');
@@ -745,12 +763,20 @@ function terminarCorridaConError(mensaje){
   }
 }
 
-function mostrarResumen(resumen){
+function mostrarResumen(resumen, log){
   document.getElementById('panel-progreso').classList.add('oculto');
   const panel = document.getElementById('panel-resumen');
   panel.classList.remove('oculto');
 
   document.getElementById('resumen-fecha').textContent = `Corrida del ${resumen.fecha} — ${resumen.analizados} de ${resumen.total_pdfs} perfiles analizados con éxito${resumen.fallidos > 0 ? ` (${resumen.fallidos} fallidos, quedaron en Drive para reintentar)` : ''}.`;
+
+  // Avisos y errores aparte: el panel de progreso (con el log) se oculta al terminar, y antes se
+  // perdían de vista — una corrida podía terminar "bien" aunque no se hubiera escrito la planilla.
+  const avisos = resumen.avisos || [];
+  document.getElementById('avisos-resumen').innerHTML = avisos.length
+    ? `<div class="caja-avisos"><strong>⚠️ ${avisos.length} aviso(s) o error(es) durante la corrida.</strong> Revisalos antes de dar la corrida por buena:<ul>${avisos.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>`
+    : '';
+  document.getElementById('log-resumen').textContent = (log || []).join('\n');
 
   document.getElementById('res-total').textContent = resumen.total_pdfs;
   document.getElementById('res-analizados').textContent = resumen.analizados;

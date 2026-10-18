@@ -8,11 +8,11 @@ import hashlib
 import unicodedata
 import almacenamiento_estado
 
-from datetime import date, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from google import genai
 from google.genai import types
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from dotenv import load_dotenv
@@ -66,6 +66,13 @@ NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
 # lugar, sin generar copias.
 ID_PRESENTACION_STATS = os.getenv('ID_PRESENTACION_STATS')
 ID_CARPETA_PRESENTACIONES = os.getenv('ID_CARPETA_PRESENTACIONES')
+
+# Zona horaria fija para la fecha de cada corrida: Cloud Run corre en UTC, así que con un
+# datetime.now() pelado, a partir de las 21:00 de Argentina la corrida quedaba fechada al día
+# siguiente (hoja del día, columna Fecha de Histórico, subcarpetas y el "Hoy es" del prompt).
+# Requiere el paquete tzdata (está en requirements.txt): la imagen python:slim puede no traer la
+# base de zonas horarias del sistema.
+ZONA_HORARIA = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 # Timeout por llamada a cada proveedor de IA: sin esto, un proveedor que se cuelga (pasó con
@@ -306,6 +313,9 @@ def construir_servicio_drive(creds):
 # ==============================================================================
 
 def listar_pdfs_en_carpeta(servicio, folder_id):
+    """Lista los PDFs de la carpeta. Si la API falla (carpeta inexistente, o la persona logueada
+    no tiene acceso), lanza RuntimeError en vez de devolver una lista vacía: antes el error se
+    perdía en la consola y la web mostraba "Se encontraron 0 perfiles" como si estuviera todo bien."""
     archivos = []
     try:
         query = f"'{folder_id}' in parents and mimeType='application/pdf' and trashed=false"
@@ -321,8 +331,10 @@ def listar_pdfs_en_carpeta(servicio, folder_id):
                 break
         return archivos
     except Exception as e:
-        print(f"Error al listar archivos: {e}")
-        return archivos
+        raise RuntimeError(
+            f"No se pudo listar la carpeta de perfiles de Drive (ID_CARPETA). Revisá que exista y "
+            f"que tu cuenta tenga acceso: {_resumir_error(e)}"
+        ) from e
 
 
 def extraer_texto_drive_en_memoria(servicio, file_id):
@@ -741,7 +753,7 @@ def cargar_plan_de_estudios(nombre_carrera):
     if not nombre_carrera or nombre_carrera not in CARRERAS_UDESA:
         return None
 
-    ruta = ruta = ruta_plan_de_estudios(CARRERAS_UDESA[nombre_carrera])
+    ruta = ruta_plan_de_estudios(CARRERAS_UDESA[nombre_carrera])
     try:
         return almacenamiento_estado.leer_texto(ruta)
     except Exception as e:
@@ -753,9 +765,29 @@ def cargar_plan_de_estudios(nombre_carrera):
 # MÓDULO 2: MULTI-PROVEEDOR IA (Gemini → Groq → NVIDIA con backoff y caché)
 # ==============================================================================
 
-def _es_error_de_limite(error_msg):
-    error_msg = error_msg.lower()
-    return "429" in error_msg or "quota" in error_msg or "rate" in error_msg or "503" in error_msg or "demand" in error_msg
+CODIGOS_HTTP_LIMITE = (429, 503)  # 429 = límite de cuota/tasa, 503 = proveedor saturado
+FRASES_ERROR_LIMITE = (
+    "rate limit", "rate_limit", "ratelimit", "too many requests",
+    "quota", "resource_exhausted", "overloaded", "high demand",
+)
+
+
+def _es_error_de_limite(error):
+    """True si el error es de cuota/saturación (vale la pena esperar y reintentar), False si es
+    cualquier otra cosa (pasar directo al siguiente proveedor).
+
+    Primero mira el código HTTP que traen las excepciones de los SDK (google-genai lo expone como
+    .code; openai y groq como .status_code). Si no hay código, se cae a frases puntuales del
+    mensaje — nunca a subcadenas sueltas: antes se buscaba "rate", y eso matcheaba
+    "generateContent" (que aparece en los 404 de Gemini cuando dan de baja un modelo), con lo
+    que se esperaban 2+4+8 s por perfil reintentando algo que nunca iba a andar."""
+    for atributo in ("code", "status_code"):
+        codigo = getattr(error, atributo, None)
+        if isinstance(codigo, int):
+            return codigo in CODIGOS_HTTP_LIMITE
+
+    error_msg = str(error).lower()
+    return any(frase in error_msg for frase in FRASES_ERROR_LIMITE)
 
 
 def _llamar_gemini(prompt):
@@ -828,9 +860,7 @@ def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3
             texto_crudo = funcion(prompt)
             return json.loads(texto_crudo)
         except Exception as e:
-            error_msg = str(e)
-
-            if _es_error_de_limite(error_msg):
+            if _es_error_de_limite(e):
                 espera = 2 ** (intento + 1)  # 2s, 4s, 8s...
                 avisar(f"   [⏳ {nombre_proveedor}: límite o saturación ({_resumir_error(e, 100)}). "
                        f"Reintento {intento+1}/{intentos_maximos} en {espera}s...]")
@@ -1126,7 +1156,7 @@ def _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, nombre_hoja):
 
 
 def _aplicar_negrita_observaciones(servicio_sheets, spreadsheet_id, sheet_id, fila_inicio,
-                                     lista_resultados, indice_columna):
+                                     lista_resultados, indice_columna, avisar=print):
     """
     Segunda pasada: sobrescribe la columna de Observación con texto + textFormatRuns para que
     las etiquetas queden en negrita. values().append() no soporta formato por caracter, por eso
@@ -1161,10 +1191,10 @@ def _aplicar_negrita_observaciones(servicio_sheets, spreadsheet_id, sheet_id, fi
     try:
         servicio_sheets.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=peticion).execute()
     except Exception as e:
-        print(f"   [⚠️ No se pudo aplicar negrita a las observaciones: {e}]")
+        avisar(f"   [⚠️ No se pudo aplicar negrita a las observaciones: {_resumir_error(e)}]")
 
 
-def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, nombre_hoja):
+def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, nombre_hoja, avisar=print):
     """
     Agrega las filas del día a la hoja diaria (14 columnas: Apellido, Nombre, URL, Carrera,
     Puntaje, Semáforo, Observación, Estado Titular, Estado Url, Estado Acerca de,
@@ -1208,17 +1238,17 @@ def escribir_matriz_sheets(servicio_sheets, spreadsheet_id, lista_resultados, no
         ).execute()
 
         filas_actualizadas = resultado_append.get('updates').get('updatedCells')
-        print(f"✅ ¡Éxito! Se actualizaron {filas_actualizadas} celdas en '{nombre_hoja}'.")
+        avisar(f"✅ Se escribieron {len(valores)} filas en la hoja del día '{nombre_hoja}' ({filas_actualizadas} celdas).")
 
         fila_inicio = _parsear_fila_inicio(resultado_append['updates']['updatedRange'])
         sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, nombre_hoja)
         if fila_inicio and sheet_id is not None:
             _aplicar_negrita_observaciones(
                 servicio_sheets, spreadsheet_id, sheet_id, fila_inicio,
-                lista_resultados, COLUMNA_OBSERVACION_DIARIA
+                lista_resultados, COLUMNA_OBSERVACION_DIARIA, avisar=avisar
             )
     except Exception as e:
-        print(f"Error al escribir en Sheets: {e}")
+        avisar(f"❌ No se pudo escribir en la hoja del día '{nombre_hoja}': {_resumir_error(e)}")
 
 def _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, nombre_hoja, columna_referencia="A"):
     """
@@ -1235,7 +1265,7 @@ def _obtener_proxima_fila_libre(servicio_sheets, spreadsheet_id, nombre_hoja, co
     valores = resultado.get('values', [])
     return len(valores) + 1
 
-def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy, nombre_hoja_historico):
+def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados, fecha_hoy, nombre_hoja_historico, avisar=print):
     """Escribe las filas del día en la hoja Histórico del año correspondiente (15 columnas,
     Fecha en A, URL en D), calculando la próxima fila libre en vez de usar append() (ver
     _obtener_proxima_fila_libre)."""
@@ -1274,18 +1304,18 @@ def escribir_historico_sheets(servicio_sheets, spreadsheet_id, lista_resultados,
             body={'values': valores}
         ).execute()
 
-        print(f"✅ ¡Éxito! Se escribieron {len(valores)} filas en '{nombre_hoja_historico}' (desde la fila {fila_inicio}).")
+        avisar(f"✅ Se escribieron {len(valores)} filas en '{nombre_hoja_historico}' (desde la fila {fila_inicio}).")
 
         sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, nombre_hoja_historico)
         if sheet_id is not None:
             _aplicar_negrita_observaciones(
                 servicio_sheets, spreadsheet_id, sheet_id, fila_inicio,
-                lista_resultados, COLUMNA_OBSERVACION_HISTORICO
+                lista_resultados, COLUMNA_OBSERVACION_HISTORICO, avisar=avisar
             )
     except Exception as e:
-        print(f"Error al escribir en '{nombre_hoja_historico}': {e}")
+        avisar(f"❌ No se pudo escribir en '{nombre_hoja_historico}': {_resumir_error(e)}")
 
-def actualizar_referencia_historico_en_estadisticas(servicio_sheets, spreadsheet_id, nombre_hoja_anterior, nombre_hoja_nueva):
+def actualizar_referencia_historico_en_estadisticas(servicio_sheets, spreadsheet_id, nombre_hoja_anterior, nombre_hoja_nueva, avisar=print):
     """
     Cuando obtener_o_crear_hoja_historico() migra o crea una hoja Histórico nueva, las fórmulas
     COUNTIFS de 'Estadísticas del Día' quedan armadas a mano apuntando al nombre VIEJO de esa
@@ -1301,7 +1331,7 @@ def actualizar_referencia_historico_en_estadisticas(servicio_sheets, spreadsheet
 
     sheet_id = _obtener_sheet_id_por_nombre(servicio_sheets, spreadsheet_id, NOMBRE_HOJA_ESTADISTICAS_DIA)
     if sheet_id is None:
-        print(f"   [⚠️ No se encontró la hoja '{NOMBRE_HOJA_ESTADISTICAS_DIA}'; no se actualizaron fórmulas.]")
+        avisar(f"   [⚠️ No se encontró la hoja '{NOMBRE_HOJA_ESTADISTICAS_DIA}'; no se actualizaron fórmulas.]")
         return
 
     resultado = servicio_sheets.spreadsheets().values().get(
@@ -1340,10 +1370,10 @@ def actualizar_referencia_historico_en_estadisticas(servicio_sheets, spreadsheet
         print(f"   [🔧 Se actualizaron {len(pedidos)} fórmula(s) en '{NOMBRE_HOJA_ESTADISTICAS_DIA}': "
               f"'{nombre_hoja_anterior}' → '{nombre_hoja_nueva}'.]")
     except Exception as e:
-        print(f"   [⚠️ No se pudieron actualizar las fórmulas de '{NOMBRE_HOJA_ESTADISTICAS_DIA}' automáticamente "
-              f"— revisalas a mano (buscar '{nombre_hoja_anterior}' y cambiarlo por '{nombre_hoja_nueva}'): {e}]")
+        avisar(f"   [⚠️ No se pudieron actualizar las fórmulas de '{NOMBRE_HOJA_ESTADISTICAS_DIA}' automáticamente "
+               f"— revisalas a mano (buscar '{nombre_hoja_anterior}' y cambiarlo por '{nombre_hoja_nueva}'): {_resumir_error(e)}]")
 
-def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha_hoy):
+def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha_hoy, avisar=print):
     """
     Escribe la fecha de hoy en B1 de 'Estadísticas del Día'. Esa hoja tiene fórmulas COUNTIFS
     que filtran 'Histórico' por esa fecha (columna A), así que no hace falta calcular ningún
@@ -1359,9 +1389,9 @@ def actualizar_fecha_estadisticas_diarias(servicio_sheets, spreadsheet_id, fecha
         ).execute()
         print(f"✅ Fecha de '{NOMBRE_HOJA_ESTADISTICAS_DIA}' actualizada a {fecha_hoy}.")
     except Exception as e:
-        print(f"   [⚠️ No se pudo actualizar '{NOMBRE_HOJA_ESTADISTICAS_DIA}': {e}]")
+        avisar(f"   [⚠️ No se pudo actualizar '{NOMBRE_HOJA_ESTADISTICAS_DIA}': {_resumir_error(e)}]")
 
-def refrescar_graficos_slides(servicio_slides, id_presentacion):
+def refrescar_graficos_slides(servicio_slides, id_presentacion, avisar=print):
     """
     Fuerza el refresh de TODOS los gráficos vinculados (sheetsChart) insertados en la
     presentación, para que reflejen los valores recién escritos en 'Estadísticas del Día'.
@@ -1378,7 +1408,7 @@ def refrescar_graficos_slides(servicio_slides, id_presentacion):
     try:
         presentacion = servicio_slides.presentations().get(presentationId=id_presentacion).execute()
     except Exception as e:
-        print(f"   [⚠️ No se pudo leer la presentación para refrescar sus gráficos: {e}]")
+        avisar(f"   [⚠️ No se pudo leer la presentación para refrescar sus gráficos: {_resumir_error(e)}]")
         return
 
     object_ids = [
@@ -1389,7 +1419,7 @@ def refrescar_graficos_slides(servicio_slides, id_presentacion):
     ]
 
     if not object_ids:
-        print("   [ℹ️ No se encontraron gráficos vinculados en la plantilla de estadísticas.]")
+        avisar("   [⚠️ No se encontraron gráficos vinculados en la plantilla de estadísticas: no hay nada que refrescar.]")
         return
 
     peticiones = [{'refreshSheetsChart': {'objectId': oid}} for oid in object_ids]
@@ -1400,10 +1430,10 @@ def refrescar_graficos_slides(servicio_slides, id_presentacion):
         ).execute()
         print(f"✅ Se refrescaron {len(object_ids)} gráficos en el Slides de estadísticas.")
     except Exception as e:
-        print(f"   [⚠️ No se pudieron refrescar los gráficos del Slides: {e}]")
+        avisar(f"   [⚠️ No se pudieron refrescar los gráficos del Slides: {_resumir_error(e)}]")
 
 
-def generar_copia_presentacion_estadisticas(servicio_drive, id_plantilla, id_carpeta_destino, nombre_archivo):
+def generar_copia_presentacion_estadisticas(servicio_drive, id_plantilla, id_carpeta_destino, nombre_archivo, avisar=print):
     """
     Copia la presentación PLANTILLA de estadísticas (ID_PRESENTACION_STATS) a un archivo nuevo,
     igual que generar_documento_informe hace con los informes individuales. Llamar DESPUÉS de
@@ -1432,11 +1462,11 @@ def generar_copia_presentacion_estadisticas(servicio_drive, id_plantilla, id_car
         print(f"✅ Presentación de estadísticas de esta corrida: '{nombre_archivo}' (ID: {id_copia}).")
         return id_copia
     except Exception as e:
-        print(f"   [⚠️ No se pudo generar la copia de la presentación de estadísticas: {e}]")
+        avisar(f"   [⚠️ No se pudo generar la copia de la presentación de estadísticas: {_resumir_error(e)}]")
         return None
 
 
-def desvincular_graficos_slides(servicio_slides, id_presentacion):
+def desvincular_graficos_slides(servicio_slides, id_presentacion, avisar=print):
     """
     Convierte TODOS los gráficos vinculados (sheetsChart) de una presentación en imágenes fijas
     — el mismo efecto que el botón "Desvincular" del propio Slides, pero hecho por código.
@@ -1458,7 +1488,7 @@ def desvincular_graficos_slides(servicio_slides, id_presentacion):
     try:
         presentacion = servicio_slides.presentations().get(presentationId=id_presentacion).execute()
     except Exception as e:
-        print(f"   [⚠️ No se pudo leer la copia para desvincular sus gráficos: {e}]")
+        avisar(f"   [⚠️ No se pudo leer la copia para desvincular sus gráficos: {_resumir_error(e)}]")
         return
 
     peticiones = []
@@ -1493,7 +1523,8 @@ def desvincular_graficos_slides(servicio_slides, id_presentacion):
         ).execute()
         print(f"✅ Se desvincularon {len(peticiones) // 2} gráficos en la copia — quedó como imagen fija.")
     except Exception as e:
-        print(f"   [⚠️ No se pudieron desvincular los gráficos de la copia: {e}]")
+        avisar(f"   [⚠️ No se pudieron desvincular los gráficos de la copia (quedó con los gráficos "
+               f"vinculados: si alguien les da 'Actualizar', van a cambiar): {_resumir_error(e)}]")
 
 # ==============================================================================
 # MÓDULO 4: GOOGLE DOCS (Generación de Informes a partir de Plantilla)
@@ -1642,7 +1673,7 @@ def generar_documento_informe(servicio_drive, servicio_docs, id_plantilla, id_ca
         return doc_id
 
     except Exception as e:
-        print(f"Error al generar el informe de {nombre} {apellido}: {e}")
+        avisar(f"   ❌ No se pudo generar el informe de {nombre} {apellido}: {_resumir_error(e)}")
         return None
 
 
@@ -1807,25 +1838,45 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
     Lanza RuntimeError si falla la construcción del servicio de Drive, para que el backend web
     pueda distinguir ese caso de "no había perfiles para analizar".
     """
-    def _avisar(mensaje, procesados=0, total=0):
+    # Último avance conocido: los mensajes que no traen procesados/total (por ejemplo los de las
+    # funciones de Sheets/Docs/Slides, que reciben avisar=_avisar) conservan el avance en vez de
+    # mandar la barra de progreso de la web de vuelta a 0.
+    progreso = {"procesados": 0, "total": 0}
+
+    # Avisos y errores de la corrida, para listarlos aparte en el resumen final (en el log
+    # completo se pierden entre los mensajes normales). Se detectan por la convención de emojis
+    # que usan todos los mensajes de problema del pipeline: ⚠️ = aviso, ❌ = error.
+    problemas = []
+
+    def _avisar(mensaje, procesados=None, total=None):
         print(mensaje)
+        if procesados is not None:
+            progreso["procesados"] = procesados
+        if total is not None:
+            progreso["total"] = total
+        if "⚠️" in mensaje or "❌" in mensaje:
+            problemas.append(mensaje.strip().strip("[]").strip())
         if callback_progreso:
-            callback_progreso(mensaje, procesados, total)
+            callback_progreso(mensaje, progreso["procesados"], progreso["total"])
 
     _avisar("Iniciando Pipeline de Desarrollo Profesional UdeSA...")
 
     # Fecha calculada una única vez acá, y pasada como parámetro al resto del pipeline.
-    hoy = datetime.now()
+    hoy = datetime.now(ZONA_HORARIA)
     fecha_hoy = hoy.strftime("%d/%m/%Y")   # Formato humano: IA, informes, columna 'Fecha' del Histórico
     fecha_iso = hoy.strftime("%Y-%m-%d")   # Formato ISO: nombres de hoja y de subcarpetas
 
-    # Validaciones tempranas: si falta algún ID, avisamos antes de procesar nada.
+    # Validaciones tempranas: sin la carpeta de origen o sin la planilla no tiene sentido arrancar
+    # (sin ID_SPREADSHEET, por ejemplo, se analizaban todos los perfiles con la IA y recién al
+    # final fallaba la escritura).
+    faltantes = [nombre for nombre, valor in (("ID_CARPETA", ID_CARPETA), ("ID_SPREADSHEET", ID_SPREADSHEET)) if not valor]
+    if faltantes:
+        raise RuntimeError(f"Faltan variables de entorno obligatorias: {', '.join(faltantes)} "
+                           "(en el .env, o en el .env.yaml del deploy a Cloud Run).")
     if not ID_PLANTILLA_INFORME:
-        print("⚠️  ADVERTENCIA: No se encontró ID_PLANTILLA_INFORME en el archivo .env.")
-        print("   Los informes individuales no podrán generarse hasta configurar esa variable.")
+        _avisar("⚠️ No está configurada ID_PLANTILLA_INFORME: los informes individuales no se van a generar.")
     if not ID_CARPETA_ANALIZADOS:
-        print("⚠️  ADVERTENCIA: No se encontró ID_CARPETA_ANALIZADOS en el archivo .env.")
-        print("   Los perfiles analizados no se moverán hasta configurar esa variable.")
+        _avisar("⚠️ No está configurada ID_CARPETA_ANALIZADOS: los perfiles analizados no se van a mover.")
 
     servicio_drive = construir_servicio_drive(creds)
     if not servicio_drive:
@@ -1853,10 +1904,7 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
 
         # Paso B: Mandar a la IA
         if texto:
-            # El mensaje sale al log de la web con el progreso actual (sin esto, _avisar lo
-            # reseteaba a 0 y la barra saltaba hacia atrás).
-            avisar_ia = lambda mensaje, _i=indice: _avisar(mensaje, _i - 1, total_pdfs)
-            analisis_json = analizar_perfil_con_ia(texto, fecha_hoy, carrera_cohorte, avisar=avisar_ia)
+            analisis_json = analizar_perfil_con_ia(texto, fecha_hoy, carrera_cohorte, avisar=_avisar)
             if analisis_json:
                 analisis_json['url_perfil'] = url_perfil
                 if carrera_cohorte:
@@ -1889,45 +1937,54 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
         print("-" * 40)
 
     # PASO 3: Escribir en la hoja diaria y en el Histórico
-    servicio_sheets = construir_servicio_sheets(creds)
+    servicio_sheets = construir_servicio_sheets(creds) if resultados_finales else None
     id_presentacion_generada = None
-    if servicio_sheets and resultados_finales:
+    if resultados_finales and not servicio_sheets:
+        _avisar("❌ No se pudo conectar con Google Sheets: los resultados de esta corrida NO se escribieron "
+                "en la planilla (los análisis quedaron en caché, se pueden volver a correr sin gastar IA).")
+    if servicio_sheets:
         nombre_hoja_hoy = obtener_o_crear_hoja_diaria(servicio_sheets, ID_SPREADSHEET, fecha_iso)
-        escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy)
+        escribir_matriz_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, nombre_hoja_hoy, avisar=_avisar)
 
         nombre_hoja_historico, nombre_hoja_historico_anterior = obtener_o_crear_hoja_historico(
             servicio_sheets, ID_SPREADSHEET, hoy.year
         )
         actualizar_referencia_historico_en_estadisticas(
-            servicio_sheets, ID_SPREADSHEET, nombre_hoja_historico_anterior, nombre_hoja_historico
+            servicio_sheets, ID_SPREADSHEET, nombre_hoja_historico_anterior, nombre_hoja_historico, avisar=_avisar
         )
-        escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy, nombre_hoja_historico)
+        escribir_historico_sheets(servicio_sheets, ID_SPREADSHEET, resultados_finales, fecha_hoy,
+                                  nombre_hoja_historico, avisar=_avisar)
 
-        actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy)
-        servicio_slides = construir_servicio_slides(creds)
-        if servicio_slides and ID_PRESENTACION_STATS:
-            refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS)
+        actualizar_fecha_estadisticas_diarias(servicio_sheets, ID_SPREADSHEET, fecha_hoy, avisar=_avisar)
+        servicio_slides = construir_servicio_slides(creds) if ID_PRESENTACION_STATS else None
+        if ID_PRESENTACION_STATS and not servicio_slides:
+            _avisar("⚠️ No se pudo conectar con Google Slides: no se actualizó la presentación de estadísticas.")
+        if servicio_slides:
+            refrescar_graficos_slides(servicio_slides, ID_PRESENTACION_STATS, avisar=_avisar)
             if ID_CARPETA_PRESENTACIONES:
                 carpeta_presentaciones_hoy = obtener_o_crear_subcarpeta(
                     servicio_drive, ID_CARPETA_PRESENTACIONES, fecha_iso
                 )
                 nombre_presentacion = f"Estadísticas_{hoy.strftime('%Y-%m-%d_%H%M')}"
                 id_presentacion_generada = generar_copia_presentacion_estadisticas(
-                    servicio_drive, ID_PRESENTACION_STATS, carpeta_presentaciones_hoy, nombre_presentacion
+                    servicio_drive, ID_PRESENTACION_STATS, carpeta_presentaciones_hoy, nombre_presentacion,
+                    avisar=_avisar
                 )
                 if id_presentacion_generada:
                     # OJO: se desvincula la COPIA (id_presentacion_generada), NUNCA la plantilla
                     # (ID_PRESENTACION_STATS) — la plantilla tiene que seguir vinculada para que
                     # refrescar_graficos_slides() funcione en la próxima corrida.
-                    desvincular_graficos_slides(servicio_slides, id_presentacion_generada)
+                    desvincular_graficos_slides(servicio_slides, id_presentacion_generada, avisar=_avisar)
             else:
                 print("   [ℹ️ ID_CARPETA_PRESENTACIONES no está configurada: se actualizó la plantilla "
                       "en el lugar, sin generar una copia nueva para esta corrida.]")
 
     # PASO 4: Generar los Google Docs individuales, en la subcarpeta de informes del día
-    if ID_PLANTILLA_INFORME and resultados_finales:
-        _avisar("\nIniciando fase de creación de reportes individuales...", len(resultados_finales), total_pdfs)
-        servicio_docs = construir_servicio_docs(creds)
+    servicio_docs = construir_servicio_docs(creds) if ID_PLANTILLA_INFORME and resultados_finales else None
+    if ID_PLANTILLA_INFORME and resultados_finales and not servicio_docs:
+        _avisar("❌ No se pudo conectar con Google Docs: no se generaron los informes individuales.")
+    if servicio_docs:
+        _avisar("\nIniciando fase de creación de reportes individuales...")
 
         # Informes generados / Mezclado|Cohorte / fecha / carrera / archivo — separado en dos
         # ramas según el modo de la corrida, para que una cohorte completa de una carrera no se
@@ -1957,12 +2014,18 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
                 avisar=_avisar
             )
 
-    _avisar("🎉 PIPELINE FINALIZADO.", total_pdfs, total_pdfs)
+    if problemas:
+        _avisar(f"🎉 PIPELINE FINALIZADO, con {len(problemas)} aviso(s) o error(es): revisalos en el resumen.",
+                total_pdfs, total_pdfs)
+    else:
+        _avisar("🎉 PIPELINE FINALIZADO.", total_pdfs, total_pdfs)
 
-    return construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso, id_presentacion_generada)
+    return construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso,
+                                      id_presentacion_generada, problemas)
 
 
-def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso, id_presentacion_generada=None):
+def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_iso, id_presentacion_generada=None,
+                               problemas=None):
     """
     Arma el diccionario resumen final del pipeline: conteos por semáforo, por carrera, alumnos
     fallidos/exitosos y links directos a Sheets/Slides, pensado para mostrarse tal cual en el
@@ -1972,6 +2035,9 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
     ESTA CORRIDA (ver generar_copia_presentacion_estadisticas), si se pudo crear. Si es None
     (ID_CARPETA_PRESENTACIONES no configurada, o falló la copia), el link cae de vuelta a la
     plantilla — sigue siendo útil, solo que esa vista sí se pisa entre corridas.
+
+    problemas: lista de mensajes de aviso/error de la corrida (ver _avisar en ejecutar_pipeline),
+    para que la web los muestre aparte en el resumen en vez de dejarlos perdidos en el log.
     """
     conteo_semaforo = {"Verde": 0, "Amarillo": 0, "Rojo": 0}
     conteo_por_carrera = {}
@@ -2013,6 +2079,7 @@ def construir_resumen_pipeline(fecha_hoy, total_pdfs, resultados_finales, fecha_
         "conteo_por_carrera": conteo_por_carrera,
         "alumnos": alumnos,
         "links": links,
+        "avisos": list(problemas or []),
         "resultados": resultados_finales,
     }
 

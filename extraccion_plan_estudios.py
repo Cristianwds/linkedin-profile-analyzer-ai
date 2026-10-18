@@ -183,6 +183,12 @@ MARGEN_PAREJA_ORDINAL_ANIO = 45
 # Tolerancia vertical para agrupar palabras del encabezado en una misma fila.
 TOLERANCIA_FILA_ENCABEZADO = 6
 
+# Mínimo de materias para dar por buena una grilla reconstruida por coordenadas. Los planes
+# reales de grado tienen entre 32 y 51; una grilla con menos casi seguro quedó recortada (ver
+# _localizar_fin_de_grilla) y, si se aceptara, se guardaría como "grilla" (método confiable, sin
+# pedir revisión manual). Por debajo de este número se descarta y sigue la cascada de métodos.
+MINIMO_MATERIAS_GRILLA = 10
+
 
 def _localizar_encabezado_anios(palabras):
     """
@@ -241,8 +247,12 @@ def _localizar_fin_de_grilla(palabras, top_encabezado):
     FUNDAMENTOS" / "CICLO DE ORIENTACIÓN". Usamos la primera aparición de "CICLO" debajo del
     encabezado como límite inferior de la grilla, para no arrastrar esas notas como si fueran
     materias. Si no aparece (algún plan con otro formato de notas), no se recorta nada.
+
+    La comparación es EXACTA en mayúsculas a propósito: con .upper() también cortaba en la palabra
+    "Ciclo" dentro del nombre de una materia (ej. "Producción y Ciclo de Vida" en Ingeniería en
+    Sustentabilidad), y la grilla quedaba reducida a la primera fila.
     """
-    candidatos = [p for p in palabras if p['top'] > top_encabezado and p['text'].strip().upper() == 'CICLO']
+    candidatos = [p for p in palabras if p['top'] > top_encabezado and p['text'].strip() == 'CICLO']
     return min((p['top'] for p in candidatos), default=None)
 
 
@@ -709,7 +719,7 @@ def _extraer_narrativo_de_pagina(pagina):
     bordes_banda = sorted(min(g) for g in _agrupar_por_gap_narrativo(arranques_racimo, MARGEN_BANDA_COLUMNA_NARRATIVO))
     if len(bordes_banda) < 2:
         return nombre_programa, None, []  # no hay 2 columnas reales: esta reconstrucción no aplica
-    banda_izq, banda_der = bordes_banda[0], bordes_banda[-1]
+    banda_izq = bordes_banda[0]
 
     # Partimos cada fila en racimos y asignamos CADA RACIMO (nunca cada palabra) a la banda más
     # cercana, agrupando racimos consecutivos de la misma banda en una sub-fila.
@@ -1018,10 +1028,16 @@ def extraer_texto_de_pdf(ruta_pdf, incluir_texto_crudo=False, callback_aviso=Non
 
         if grilla:
             total_materias = sum(len(m) for m in grilla.values())
-            _avisar(f"📐 Grilla reconstruida por posición: {total_materias} materias en {len(grilla)} columna(s)")
-            partes_finales.append(grilla_a_texto(grilla))
-            metodo_usado = "grilla"
-        else:
+            if total_materias >= MINIMO_MATERIAS_GRILLA:
+                _avisar(f"📐 Grilla reconstruida por posición: {total_materias} materias en {len(grilla)} columna(s)")
+                partes_finales.append(grilla_a_texto(grilla))
+                metodo_usado = "grilla"
+            else:
+                _avisar(f"⚠️ La grilla por posición solo encontró {total_materias} materia(s) (mínimo "
+                        f"{MINIMO_MATERIAS_GRILLA}): se descarta y se prueban los otros métodos.")
+                grilla = None
+
+        if not grilla:
             _avisar("ℹ️ No se pudo reconstruir la grilla por posición. Probando por pilares (planes de posgrado)...")
             texto_pilares = extraer_pilares_de_pdf(pdf)
             if texto_pilares:

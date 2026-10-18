@@ -10,3 +10,4 @@ uvicorn[standard]
 python-multipart
 itsdangerous
 google-cloud-storage
+tzdata
