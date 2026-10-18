@@ -1080,8 +1080,9 @@ def obtener_o_crear_hoja_historico(servicio_sheets, spreadsheet_id, año):
          con un error pidiendo crear 'Histórico {año}' a mano una vez — mismo criterio que ya
          usa obtener_o_crear_hoja_diaria con 'Plantilla'.
 
-    Las hojas 'Estadísticas' y 'Estadísticas del día' de la planilla cuentan del Histórico con
-    fórmulas que nombran el año ('Histórico 2026'!G:G): con un año nuevo hay que actualizarlas a mano.
+    Las hojas 'Estadísticas' y 'Estadísticas del día' de la planilla arman el nombre
+    'Histórico {año}' con INDIRECT a partir del año de su celda B1, así que pasan solas al año
+    nuevo: si cambia este formato de nombre, hay que cambiar también esas fórmulas.
     """
     nombre_objetivo = f"{NOMBRE_HOJA_HISTORICO} {año}"
     hojas = _obtener_metadata_hojas(servicio_sheets, spreadsheet_id)
