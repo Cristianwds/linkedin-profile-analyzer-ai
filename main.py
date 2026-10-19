@@ -978,6 +978,43 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar
     avisar("   ❌ Ningún proveedor de IA pudo analizar este perfil.")
     return None
 
+
+# Mismos umbrales que "REGLAS DE PUNTUACIÓN Y SEMÁFORO" en INSTRUCCIONES_SISTEMA. No se arma el
+# prompt con estas constantes a propósito: cambiar el texto del prompt invalida la caché.
+PUNTAJE_MINIMO_VERDE = 75
+PUNTAJE_MINIMO_AMARILLO = 50
+
+
+def semaforo_para_puntaje(puntaje):
+    if puntaje >= PUNTAJE_MINIMO_VERDE:
+        return "Verde"
+    if puntaje >= PUNTAJE_MINIMO_AMARILLO:
+        return "Amarillo"
+    return "Rojo"
+
+
+def normalizar_puntaje_y_semaforo(resultado, avisar=print):
+    """Deja el puntaje como entero de 0 a 100 y recalcula el semáforo a partir de él.
+
+    El prompt le pide a la IA las dos cosas, pero nada garantiza que sean coherentes (un 72 con
+    "Verde", o el puntaje como texto "72"), sobre todo con los proveedores de respaldo. El
+    semáforo alimenta la planilla, los informes y las presentaciones, así que se deriva siempre del
+    puntaje. Si el puntaje no es un número, se deja lo que dio la IA, con un aviso."""
+    try:
+        puntaje = round(float(str(resultado.get('puntaje_general')).replace(',', '.')))
+    except (TypeError, ValueError):
+        avisar(f"   [⚠️ La IA devolvió un puntaje que no es un número ({resultado.get('puntaje_general')!r}): "
+               f"queda el semáforo que dio ('{resultado.get('color_semaforo')}').]")
+        return resultado
+    puntaje = max(0, min(100, puntaje))
+    semaforo = semaforo_para_puntaje(puntaje)
+    if resultado.get('color_semaforo') != semaforo:
+        avisar(f"   [ℹ️ Semáforo corregido según el puntaje ({puntaje}): la IA dijo "
+               f"'{resultado.get('color_semaforo')}', queda '{semaforo}'.]")
+    resultado['puntaje_general'] = puntaje
+    resultado['color_semaforo'] = semaforo
+    return resultado
+
 # ==============================================================================
 # MÓDULO 3: GOOGLE SHEETS (Escritura de Matriz Actualizada)
 # ==============================================================================
@@ -1802,6 +1839,8 @@ def ejecutar_pipeline(creds, callback_progreso=None, carrera_cohorte=None):
                 registro=registro
             )
             if analisis_json:
+                # También para los que salen de la caché, que pueden ser de antes de este chequeo.
+                normalizar_puntaje_y_semaforo(analisis_json, avisar=lambda mensaje: _avisar(mensaje, perfil=archivo['name']))
                 analisis_json['url_perfil'] = url_perfil
                 if carrera_cohorte:
                     # Aseguramos que el campo que arma la IA coincida textualmente con la
