@@ -213,15 +213,6 @@ CRITERIO PARA "analisis_bonus" (INFORMATIVO, NO AFECTA EL PUNTAJE NI EL SEMÁFOR
   allá del checklist básico (por ejemplo: Idiomas, Proyectos, Voluntariados, Publicaciones,
   Cursos, Logros/Honores). Si no encontrás ninguna, indicalo brevemente ("No se detectan
   secciones adicionales.").
-- "consistencia_idioma": revisá la sección "Idiomas" del perfil. SOLO si declara un nivel de
-  Inglés de "Competencia profesional completa" o "Competencia bilingüe o nativa", aplicá este
-  criterio (si no declara ese nivel, escribí "No aplica: no se declara un nivel avanzado de
-  inglés."): si el perfil (tal como está en este PDF) está mayormente en español, recomendá
-  armar también una versión del perfil en inglés (aclarando que esto es una recomendación basada
-  en lo que muestra este PDF puntual, ya que no se puede verificar si el estudiante ya tiene una
-  versión en inglés configurada aparte). Si el perfil ya está mayormente en inglés, en cambio,
-  revisá que TODAS las secciones estén en ese idioma de forma consistente, y marcá si encontrás
-  alguna sección mezclada en español.
 
 ESTRUCTURA EXACTA DEL JSON:
 {
