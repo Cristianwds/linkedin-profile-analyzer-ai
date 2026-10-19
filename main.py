@@ -65,6 +65,7 @@ ID_PLANTILLA_INFORME = os.getenv('ID_PLANTILLA_INFORME')  # <-- NUEVO: ID del Go
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 NVIDIA_API_KEY = os.getenv('NVIDIA_API_KEY')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 # Presentaciones de estadísticas. ID_PRESENTACION_MASTER_STATS es la plantilla actual
 # (Plantilla_DP_version3): generar_presentacion_stats.py la copia a ID_CARPETA_PRESENTACIONES y le
@@ -454,9 +455,13 @@ def mover_archivo_a_carpeta(servicio_drive, file_id, id_carpeta_destino, id_carp
 # ==============================================================================
 
 
-# Orden de la cadena de fallback. Gemini primero (mejor calidad de análisis),
-# después los proveedores gratuitos alternativos.
-ORDEN_PROVEEDORES = ["gemini", "groq", "nvidia"]
+# Orden de la cadena de fallback. Gemini primero (mejor calidad de análisis), después OpenAI
+# (GPT-6 Luna: el plan gratis de OpenAI da 50 pedidos por día, que alcanzan como respaldo) y al
+# final los proveedores gratuitos alternativos. Un proveedor sin API key falla al instante y se
+# pasa al siguiente.
+ORDEN_PROVEEDORES = ["gemini", "openai", "groq", "nvidia"]
+
+cliente_openai = OpenAI(api_key=OPENAI_API_KEY, timeout=TIMEOUT_IA_SEGUNDOS) if OPENAI_API_KEY else None
 
 cliente_groq = Groq(api_key=GROQ_API_KEY, timeout=TIMEOUT_IA_SEGUNDOS) if GROQ_API_KEY else None
 
@@ -760,7 +765,7 @@ def cargar_plan_de_estudios(nombre_carrera):
 
 
 # ==============================================================================
-# MÓDULO 2: MULTI-PROVEEDOR IA (Gemini → Groq → NVIDIA con backoff y caché)
+# MÓDULO 2: MULTI-PROVEEDOR IA (Gemini → OpenAI → Groq → NVIDIA con backoff y caché)
 # ==============================================================================
 
 CODIGOS_HTTP_LIMITE = (429, 503)  # 429 = límite de cuota/tasa, 503 = proveedor saturado
@@ -768,6 +773,15 @@ FRASES_ERROR_LIMITE = (
     "rate limit", "rate_limit", "ratelimit", "too many requests",
     "quota", "resource_exhausted", "overloaded", "high demand",
 )
+# Cupo agotado hasta el día siguiente (o sin saldo): esperar unos segundos no lo resuelve. OpenAI
+# dice "requests per day (RPD)" o "insufficient_quota"; Gemini nombra la cuota "…PerDay…".
+FRASES_CUPO_DIARIO = ("insufficient_quota", "per day", "perday")
+
+
+def _es_cupo_diario_agotado(error):
+    """True si el error es un límite que no se libera reintentando en segundos."""
+    error_msg = str(error).lower()
+    return any(frase in error_msg for frase in FRASES_CUPO_DIARIO)
 
 
 def _es_error_de_limite(error):
@@ -801,7 +815,8 @@ def _armar_uso(entrada, salida, total):
 
 
 def _uso_de_respuesta_chat(respuesta):
-    """Tokens de una respuesta con formato OpenAI (Groq y NVIDIA usan el mismo)."""
+    """Tokens de una respuesta con formato OpenAI (Groq y NVIDIA usan el mismo). En los modelos
+    que razonan (como GPT-6 Luna), completion_tokens ya incluye los tokens de razonamiento."""
     uso = getattr(respuesta, 'usage', None)
     if uso is None:
         return None
@@ -822,6 +837,21 @@ def _llamar_gemini(prompt):
         return respuesta.text, None
     # total_token_count incluye también los tokens de "razonamiento" del modelo, si los usó.
     return respuesta.text, _armar_uso(uso.prompt_token_count, uso.candidates_token_count, uso.total_token_count)
+
+
+def _llamar_openai(prompt):
+    if not cliente_openai:
+        raise RuntimeError("OPENAI_API_KEY no configurada.")
+    respuesta = cliente_openai.chat.completions.create(
+        model="gpt-6-luna",
+        messages=[{"role": "user", "content": prompt}],
+        # Luna razona antes de responder y esos tokens se cuentan como salida: el tope deja lugar
+        # al razonamiento más el JSON. OpenAI calcula el límite por minuto (TPM) con este tope y no
+        # con lo que se usa, así que no conviene subirlo de más.
+        max_completion_tokens=8000,
+        response_format={"type": "json_object"},
+    )
+    return respuesta.choices[0].message.content, _uso_de_respuesta_chat(respuesta)
 
 
 def _llamar_groq(prompt):
@@ -859,9 +889,20 @@ def _llamar_nvidia(prompt):
 
 ADAPTADORES = {
     "gemini": _llamar_gemini,
+    "openai": _llamar_openai,
     "groq": _llamar_groq,
     "nvidia": _llamar_nvidia,
 }
+
+
+def _proveedor_configurado(nombre_proveedor):
+    """True si el proveedor tiene su API key cargada."""
+    return {
+        "gemini": bool(GEMINI_API_KEY),
+        "openai": cliente_openai is not None,
+        "groq": cliente_groq is not None,
+        "nvidia": cliente_nvidia is not None,
+    }.get(nombre_proveedor, False)
 
 
 def _resumir_error(error, largo=160):
@@ -886,6 +927,10 @@ def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3
             texto_crudo, uso = funcion(prompt)
             return json.loads(texto_crudo), uso, None
         except Exception as e:
+            if _es_error_de_limite(e) and _es_cupo_diario_agotado(e):
+                avisar(f"   [❌ {nombre_proveedor}: cupo diario agotado o sin saldo ({_resumir_error(e, 100)}). "
+                       "No se reintenta.]")
+                return None, None, "cuota"
             if _es_error_de_limite(e):
                 espera = 2 ** (intento + 1)  # 2s, 4s, 8s...
                 avisar(f"   [⏳ {nombre_proveedor}: límite o saturación ({_resumir_error(e, 100)}). "
@@ -900,7 +945,7 @@ def _intentar_proveedor_con_backoff(nombre_proveedor, prompt, intentos_maximos=3
 
 
 def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar=print, registro=None):
-    """Orquestador: preclasificación de carrera → caché → Gemini → Groq → NVIDIA.
+    """Orquestador: preclasificación de carrera → caché → Gemini → OpenAI → Groq → NVIDIA.
 
     carrera_cohorte: si se pasa (modo "cohorte completa"), pisa la detección automática por
     keywords para TODO el lote, avisando por consola si un perfil puntual no la menciona (no
@@ -955,7 +1000,11 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar
 
     prompt = f"{instrucciones_con_fecha}\n\nPERFIL DEL ESTUDIANTE:\n{texto_perfil}"
 
-    for indice_proveedor, proveedor in enumerate(ORDEN_PROVEEDORES):
+    # Los proveedores sin API key se saltean sin aviso: si no, cada perfil que pasa al respaldo
+    # sumaría un ❌ "no configurada" al recuadro de avisos (por ejemplo, OpenAI antes de cargar
+    # OPENAI_API_KEY en el .env.yaml de producción).
+    cadena = [p for p in ORDEN_PROVEEDORES if _proveedor_configurado(p)]
+    for indice_proveedor, proveedor in enumerate(cadena):
         print(f"   [🔎 Analizando con: {proveedor}]")
         resultado, uso, motivo_fallo = _intentar_proveedor_con_backoff(proveedor, prompt, avisar=avisar)
         if resultado:
@@ -972,8 +1021,8 @@ def analizar_perfil_con_ia(texto_perfil, fecha_hoy, carrera_cohorte=None, avisar
             guardar_cache(CACHE_ANALISIS)
             return resultado
         registro["fallos"].append({"proveedor": proveedor, "motivo": motivo_fallo})
-        if indice_proveedor + 1 < len(ORDEN_PROVEEDORES):
-            avisar(f"   [↪️ Pasando a '{ORDEN_PROVEEDORES[indice_proveedor + 1]}' tras fallo de {proveedor}...]")
+        if indice_proveedor + 1 < len(cadena):
+            avisar(f"   [↪️ Pasando a '{cadena[indice_proveedor + 1]}' tras fallo de {proveedor}...]")
 
     avisar("   ❌ Ningún proveedor de IA pudo analizar este perfil.")
     return None
