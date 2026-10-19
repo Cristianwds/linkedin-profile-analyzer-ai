@@ -620,7 +620,10 @@ def estado_sistema(_creds: Credentials = Depends(usuario_actual)):
 
 @app.get("/")
 def index():
-    return FileResponse("static/index.html")
+    # no-cache: el navegador consulta en cada carga si la página cambió (si no, el servidor responde
+    # un 304 corto). Sin esto, después de un deploy el navegador podía seguir mostrando la versión
+    # vieja de la página guardada.
+    return FileResponse("static/index.html", headers={"Cache-Control": "no-cache"})
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
