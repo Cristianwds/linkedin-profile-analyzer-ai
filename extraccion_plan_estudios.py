@@ -118,9 +118,10 @@ import os
 import re
 from collections import Counter
 import pdfplumber
-from dotenv import load_dotenv
 
-load_dotenv()
+import entorno
+
+entorno.cargar_variables()
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 CARPETA_DESTINO = "planes_de_estudio"

@@ -31,17 +31,18 @@ Reglas de seguridad:
 
 Requisitos: GCS_BUCKET_ESTADO en el .env, y credenciales de Google en tu compu con acceso al
 bucket (las mismas con las que corrés `gcloud`; si falla, `gcloud auth application-default login`).
+Si tenés un .env.prueba (entorno de prueba, ver entorno.py), ahí el bucket va vacío a propósito:
+corré este script con ARCHIVO_ENV=.env adelante para usar el de producción.
 """
 
 import json
 import os
 import sys
 
-from dotenv import load_dotenv
-
 import almacenamiento_estado
+import entorno
 
-load_dotenv()
+entorno.cargar_variables()
 
 # Este script existe justamente para escribir en el bucket desde tu compu: fuera de Cloud Run,
 # almacenamiento_estado ignora el bucket salvo que se pida explícitamente (ver su docstring).

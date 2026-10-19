@@ -1,6 +1,7 @@
 .git
 .gitignore
 .env
+.env.prueba
 .env.yaml
 client_secret.json
 client_secret_web.json

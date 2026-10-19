@@ -636,9 +636,47 @@
     .login-acceso{align-items:flex-start; padding:24px 16px 40px;}
     .tarjeta-login{padding:28px 22px;}
   }
+
+  /* ---------- franja "Entorno de prueba" ----------
+     Se muestra cuando el server corre con .env.prueba (ver entorno.py y /api/sistema/estado),
+     para que nadie confunda la planilla de prueba con la de producción. Queda fija arriba y el
+     menú lateral se corre para no quedar tapado. Usa --amarillo / --amarillo-bg, así cambia sola
+     en modo oscuro; --fondo va debajo porque --amarillo-bg es translúcido en oscuro y, al ser
+     sticky, se vería el contenido pasar por detrás. */
+  .franja-prueba{
+    position:sticky;
+    top:0;
+    z-index:30;
+    height:34px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    padding:0 16px;
+    background:linear-gradient(var(--amarillo-bg), var(--amarillo-bg)), var(--fondo);
+    border-bottom:2px solid var(--amarillo);
+    color:var(--amarillo);
+    font-size:.84rem;
+    font-weight:600;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .franja-prueba strong{font-weight:800; text-transform:uppercase; letter-spacing:.04em;}
+  body.entorno-prueba .nav{top:34px; height:calc(100vh - 34px);}
+  body.entorno-prueba .app{min-height:calc(100vh - 34px);}
+  @media (max-width: 860px){
+    body.entorno-prueba .nav{height:auto;}
+    .franja-prueba .detalle{display:none;}
+  }
 </style>
 </head>
 <body>
+
+<div id="franja-prueba" class="franja-prueba oculto" role="status">
+  <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7.5 15h9"/></svg>
+  <span><strong>Entorno de prueba</strong><span class="detalle"> · planilla y carpetas de Drive de prueba (<span id="franja-prueba-archivo">.env.prueba</span>), no las de producción</span></span>
+</div>
 
 <div id="pantalla-login" class="pantalla-login oculto">
   <section class="login-marca">
@@ -982,9 +1020,21 @@ async function cargarEstadoSistema(){
     html += `<div class="fila"><span class="punto ${d.variables_env_faltantes.length===0 ? 'ok':'mal'}"></span> ${d.variables_env_faltantes.length===0 ? 'Configuración completa' : d.variables_env_faltantes.length+' variable(s) sin configurar'}</div>`;
     html += `<div class="fila"><span class="punto ok"></span> ${d.carreras_configuradas} carreras cargadas</div>`;
     cont.innerHTML = html;
+    mostrarFranjaPrueba(d.entorno_prueba, d.archivo_env);
   }catch(e){
     cont.innerHTML = `<div class="fila"><span class="punto mal"></span> No se pudo conectar al servidor</div>`;
   }
+}
+
+/* Franja "Entorno de prueba": el server avisa si arrancó con .env.prueba (ver entorno.py). También
+   marca el título de la pestaña, para distinguirla si están abiertas la de prueba y la de producción. */
+function mostrarFranjaPrueba(activo, archivo){
+  document.getElementById('franja-prueba').classList.toggle('oculto', !activo);
+  document.body.classList.toggle('entorno-prueba', !!activo);
+  if (archivo) document.getElementById('franja-prueba-archivo').textContent = archivo;
+  const prefijo = '[PRUEBA] ';
+  if (activo && !document.title.startsWith(prefijo)) document.title = prefijo + document.title;
+  if (!activo && document.title.startsWith(prefijo)) document.title = document.title.slice(prefijo.length);
 }
 
 /* ---------------- selector de modo (mixto / cohorte) ---------------- */

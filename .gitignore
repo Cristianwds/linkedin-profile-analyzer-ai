@@ -1,5 +1,6 @@
 # Secretos y credenciales (¡CRÍTICO!)
 .env
+.env.prueba
 client_secret.json
 token.json
 cache_analisis.json

@@ -62,6 +62,7 @@ import main as pipeline
 import extraccion_plan_estudios as extractor
 import lote_extraccion_planes as lote
 import almacenamiento_estado
+import entorno
 
 app = FastAPI(title="UdeSA · Análisis de Perfiles de LinkedIn")
 
@@ -608,6 +609,10 @@ def estado_sistema(_creds: Credentials = Depends(usuario_actual)):
         "variables_env_faltantes": faltantes,
         "carreras_configuradas": len(pipeline.CARRERAS_UDESA),
         "hay_corrida_activa": hay_corrida_activa,
+        # True si el server arrancó con .env.prueba (ver entorno.py): el frontend muestra la franja
+        # "Entorno de prueba" para que nadie confunda la planilla de prueba con la de producción.
+        "entorno_prueba": entorno.es_entorno_prueba(),
+        "archivo_env": os.path.basename(entorno.archivo_cargado()) if entorno.es_entorno_prueba() else None,
     }
 
 

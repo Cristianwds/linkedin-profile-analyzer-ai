@@ -1,6 +1,6 @@
 import os
-from dotenv import load_dotenv
-load_dotenv()
+import entorno
+entorno.cargar_variables()
 from main import autenticar_google_cli
 from generar_presentacion_stats import construir_servicio_drive
 

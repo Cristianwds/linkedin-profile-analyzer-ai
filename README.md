@@ -80,6 +80,30 @@ Los PDFs de origen viven en `pdfs_grado/` y `pdfs_posgrado/` — son solo para u
 este script) y están excluidos del deploy vía `.gcloudignore`, ya que el pipeline en producción
 lee los `.txt` ya extraídos, no los PDFs crudos.
 
+## Probar sin tocar producción
+
+El `.env` tiene los IDs reales: cualquier corrida en tu compu escribe en la planilla de
+producción (hoja del día y `Histórico <año>`, de donde salen las estadísticas), mueve PDFs a
+`02_PDFs_Procesados` y crea informes y presentaciones. Para probar sin ensuciar nada:
+
+1. En Drive, armá las copias de prueba que pide `.env.prueba.example`: una copia de la planilla
+   (con `Plantilla`, `Histórico 2026` y las hojas de Estadísticas), cuatro carpetas de prueba
+   equivalentes a las 01 a 04, y copias del Informe modelo y de `Plantilla_DP_version3`.
+2. `cp .env.prueba.example .env.prueba` y completalo con esos IDs (las API keys y el
+   `SESSION_SECRET` pueden ser los mismos del `.env`).
+3. Corré como siempre: `python main.py`, `uvicorn web_app:app --reload --port 8080` o
+   `python generar_presentacion_stats.py ...`. Mientras exista `.env.prueba` se carga **solo** ese
+   archivo (ver `entorno.py`): la terminal muestra `🧪 ENTORNO DE PRUEBA` al arrancar y la web, una
+   franja amarilla "Entorno de prueba" arriba de todo.
+
+Para volver a producción en tu compu, borrá o renombrá `.env.prueba`, o forzá el archivo con
+`ARCHIVO_ENV=.env python main.py`. Si en `.env.prueba` quedó por error el ID de la planilla o de
+alguna carpeta de producción, el programa corta al arrancar. `.env.prueba` no se commitea ni se
+sube a Cloud Run (está en `.gitignore` y `.gcloudignore`), así que el deploy no cambia.
+
+Lo que **no** se separa: los archivos locales de estado (`carreras_*.json`, `planes_de_estudio/`,
+`cache_analisis.json`, `tokens/`) son los mismos en los dos modos, igual que antes.
+
 ## Autenticación con Google
 
 1. En Google Cloud Console (proyecto `849635297315`), descargar las credenciales OAuth de
@@ -193,5 +217,7 @@ planes_de_estudio/<nivel>/*.txt  # planes de estudio en texto plano, usados como
 pdfs_grado/, pdfs_posgrado/    # PDFs de origen para carga masiva — solo uso local, no se deployan
 Dockerfile                     # build para Cloud Run
 .env.example                   # variables de entorno necesarias (copiar a .env)
+.env.prueba.example            # lo mismo para el entorno de prueba (copiar a .env.prueba, ver arriba)
+entorno.py                     # elige qué archivo de variables cargar (.env o .env.prueba)
 .env.yaml                      # mismas variables en YAML, para el deploy a Cloud Run (no se commitea)
 ```

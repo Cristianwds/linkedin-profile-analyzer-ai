@@ -748,6 +748,10 @@ def generar_presentacion_desde_historico(creds, servicio_sheets, spreadsheet_id,
 
 if __name__ == "__main__":
     import argparse
+    import entorno
+    # main también las carga al importarse; se llama acá para que quede claro de dónde salen
+    # ID_SPREADSHEET y los demás IDs (.env, o .env.prueba si existe).
+    entorno.cargar_variables()
     from main import autenticar_google_cli, construir_servicio_sheets
 
     parser = argparse.ArgumentParser(description="Genera una presentación de prueba a partir del Histórico.")

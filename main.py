@@ -7,6 +7,7 @@ import time
 import hashlib
 import unicodedata
 import almacenamiento_estado
+import entorno
 import generar_presentacion_stats as presentacion_stats
 
 from datetime import datetime
@@ -16,7 +17,6 @@ from google import genai
 from google.genai import types
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
-from dotenv import load_dotenv
 from openai import OpenAI
 from groq import Groq
 
@@ -35,8 +35,9 @@ from groq import Groq
 # Redeploy a Cloud Run (correrlo desde la raiz del proyecto, en una sola linea):
 # gcloud run deploy linkedin-profile-analyzer --source . --region southamerica-east1 --service-account linkedin-analyzer-sa@udesa-analizador-perfiles.iam.gserviceaccount.com --env-vars-file .env.yaml --max-instances 1 --no-cpu-throttling
 
-# Cargar las variables de entorno desde el archivo .env
-load_dotenv()
+# Cargar las variables de entorno: del .env, o de .env.prueba si existe (ver entorno.py, para
+# probar sin tocar la planilla ni las carpetas de Drive de producción).
+entorno.cargar_variables()
 
 # ==============================================================================
 # CONFIGURACIÓN GENERAL
