@@ -3,163 +3,311 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Declara que la página trae su propio modo oscuro: sin esto, el modo oscuro automático de
+     Chrome la oscurece por su cuenta y los colores quedan cruzados. -->
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#004a92">
 <title>Desarrollo Profesional · Análisis de Perfiles de LinkedIn — UdeSA</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23004a92'/%3E%3Ctext x='32' y='42' font-family='Arial,sans-serif' font-size='28' font-weight='700' text-anchor='middle' fill='%239cffeb'%3EDP%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+  /* ---------- colores (modo claro y oscuro) ----------
+     --azul es el azul institucional (botones principales); --azul-nav, el fondo del menú y del
+     panel de marca del login; --acento, links, foco y elementos activos. En modo oscuro cambian
+     solos según la preferencia del sistema. */
   :root{
+    color-scheme:light dark;
     --azul:#004a92;
-    --azul-claro:#4f75ff;
+    --azul-hover:#003b75;
+    --azul-nav:#004a92;
+    --azul-nav-oscuro:#003a73;
+    --acento:#2a5bd7;
+    --acento-bg:#eef2fe;
     --menta:#9cffeb;
-    --fondo:#f4f6fb;
+    --fondo:#f3f5f9;
     --panel:#ffffff;
-    --borde:#e2e6f0;
-    --texto:#1c2333;
-    --texto-tenue:#5c6376;
-    --verde:#1c9d6b;
-    --verde-bg:#e6f6ef;
-    --amarillo:#b8790b;
-    --amarillo-bg:#fdf2df;
-    --rojo:#c73f43;
-    --rojo-bg:#fbe9e9;
-    --radio:10px;
+    --panel-2:#f8f9fc;
+    --borde:#e3e7ef;
+    --borde-fuerte:#cfd6e3;
+    --texto:#1b2232;
+    --texto-tenue:#5b6478;
+    --verde:#157f56;
+    --verde-bg:#e5f5ee;
+    --amarillo:#9a6406;
+    --amarillo-bg:#fdf3e1;
+    --rojo:#b93439;
+    --rojo-bg:#fbeaea;
+    --violeta:#6d3fd6;
+    --violeta-bg:#f1eafe;
+    --log-bg:#0f1626;
+    --log-texto:#cfe0ff;
+    --sombra:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+    --anillo-foco:0 0 0 3px rgba(42,91,215,.3);
+    --radio:12px;
+    --radio-ctrl:8px;
   }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --azul:#2f6fc4;
+      --azul-hover:#3b7cd3;
+      --azul-nav:#0b2a4f;
+      --azul-nav-oscuro:#08213f;
+      --acento:#8aa9ff;
+      --acento-bg:rgba(138,169,255,.12);
+      --fondo:#0e131d;
+      --panel:#161c28;
+      --panel-2:#1b2230;
+      --borde:#273042;
+      --borde-fuerte:#36415a;
+      --texto:#e6e9f1;
+      --texto-tenue:#9aa3b6;
+      --verde:#4fd19b;
+      --verde-bg:rgba(79,209,155,.12);
+      --amarillo:#f2c14e;
+      --amarillo-bg:rgba(242,193,78,.12);
+      --rojo:#ff8a8a;
+      --rojo-bg:rgba(255,138,138,.12);
+      --violeta:#b79bff;
+      --violeta-bg:rgba(183,155,255,.14);
+      --log-bg:#0a0f19;
+      --sombra:0 1px 2px rgba(0,0,0,.35);
+      --anillo-foco:0 0 0 3px rgba(138,169,255,.35);
+    }
+  }
+
   *{box-sizing:border-box;}
   body{
     margin:0;
     font-family:'Libre Franklin',system-ui,sans-serif;
     background:var(--fondo);
     color:var(--texto);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
   }
-  a{color:var(--azul-claro);}
+  a{color:var(--acento);}
+  :focus-visible{outline:none; box-shadow:var(--anillo-foco); border-radius:var(--radio-ctrl);}
+  .icono{width:18px; height:18px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
 
   /* ---------- estructura general ---------- */
   .app{display:flex; min-height:100vh;}
 
   .nav{
-    width:230px;
-    background:var(--azul);
+    width:248px;
+    background:var(--azul-nav);
     color:#fff;
     display:flex;
     flex-direction:column;
-    padding:28px 0;
+    padding:22px 14px 18px;
     flex-shrink:0;
+    position:sticky;
+    top:0;
+    height:100vh;
   }
   .nav .marca{
-    padding:0 24px 24px;
-    border-bottom:1px solid rgba(255,255,255,.15);
-    margin-bottom:18px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:0 8px 22px;
+    border-bottom:1px solid rgba(255,255,255,.14);
+    margin-bottom:16px;
   }
-  .nav .marca .sigla{
-    font-weight:800;
-    font-size:1.35rem;
-    letter-spacing:.02em;
-  }
-  .nav .marca .sub{
-    font-size:.8rem;
+  .logo-dp{
+    width:38px;
+    height:38px;
+    border-radius:10px;
+    background:var(--azul-nav-oscuro);
+    border:1px solid rgba(156,255,235,.35);
     color:var(--menta);
-    margin-top:2px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:800;
+    font-size:.95rem;
+    letter-spacing:.02em;
+    flex-shrink:0;
   }
+  .nav .marca .sigla{font-weight:800; font-size:1.1rem; letter-spacing:.01em; line-height:1.2;}
+  .nav .marca .sub{font-size:.76rem; color:var(--menta); margin-top:2px; line-height:1.3;}
+  .nav-tabs{display:flex; flex-direction:column; gap:4px;}
   .nav button{
     all:unset;
-    display:block;
+    box-sizing:border-box;
+    display:flex;
+    align-items:center;
+    gap:12px;
     cursor:pointer;
-    padding:13px 24px;
-    font-size:.95rem;
+    padding:10px 12px;
+    border-radius:var(--radio-ctrl);
+    font-size:.93rem;
     font-weight:500;
     color:rgba(255,255,255,.78);
-    border-left:3px solid transparent;
   }
-  .nav button:hover{color:#fff; background:rgba(255,255,255,.06);}
+  .nav button:hover{color:#fff; background:rgba(255,255,255,.08);}
   .nav button.activo{
     color:#fff;
-    background:rgba(255,255,255,.1);
-    border-left-color:var(--menta);
+    background:rgba(255,255,255,.14);
+    box-shadow:inset 3px 0 0 var(--menta);
     font-weight:600;
   }
+  .nav button:focus-visible{box-shadow:0 0 0 2px var(--menta);}
+  .pie-nav{margin-top:auto;}
   .nav .estado-sistema{
-    margin-top:auto;
-    padding:16px 24px 0;
-    font-size:.78rem;
-    color:rgba(255,255,255,.6);
-    border-top:1px solid rgba(255,255,255,.15);
+    padding:14px 10px;
+    font-size:.76rem;
+    color:rgba(255,255,255,.62);
+    border-top:1px solid rgba(255,255,255,.14);
   }
-  .nav .estado-sistema .fila{margin-top:6px; display:flex; gap:6px; align-items:center;}
+  .nav .estado-sistema .fila{margin-top:6px; display:flex; gap:8px; align-items:center;}
+  .nav .estado-sistema .fila:first-child{margin-top:0;}
   .punto{width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0;}
   .punto.ok{background:var(--menta);}
   .punto.mal{background:#ff9d8a;}
+  .barra-usuario{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:12px 10px 0;
+    font-size:.8rem;
+    color:rgba(255,255,255,.82);
+    border-top:1px solid rgba(255,255,255,.14);
+  }
+  .avatar{
+    width:30px;
+    height:30px;
+    border-radius:50%;
+    background:rgba(156,255,235,.16);
+    color:var(--menta);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:700;
+    font-size:.82rem;
+    flex-shrink:0;
+  }
+  .email-usuario{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .barra-usuario a{color:var(--menta); text-decoration:none; font-weight:600; padding:2px 4px;}
+  .barra-usuario a:hover{text-decoration:underline;}
 
-  main{flex:1; min-width:0; padding:36px 44px; max-width:1080px;}
-  h1{font-size:1.5rem; margin:0 0 4px;}
-  .lead{color:var(--texto-tenue); margin:0 0 28px; font-size:.95rem;}
+  main{flex:1; min-width:0; padding:40px 48px 56px; max-width:1120px;}
+  h1{font-size:1.6rem; font-weight:700; letter-spacing:-.01em; margin:0 0 6px;}
+  .lead{color:var(--texto-tenue); margin:0 0 28px; font-size:.95rem; max-width:72ch;}
 
   .panel{
     background:var(--panel);
     border:1px solid var(--borde);
     border-radius:var(--radio);
-    padding:24px;
+    padding:26px 28px;
     margin-bottom:22px;
+    box-shadow:var(--sombra);
   }
-  .panel h2{font-size:1.05rem; margin:0 0 4px;}
-  .panel .desc{color:var(--texto-tenue); font-size:.88rem; margin:0 0 18px;}
+  .panel h2{font-size:1.08rem; font-weight:700; margin:0 0 4px;}
+  .panel .desc{color:var(--texto-tenue); font-size:.88rem; margin:0 0 20px; max-width:80ch;}
 
   /* ---------- controles ---------- */
   label{font-size:.85rem; font-weight:600; display:block; margin-bottom:6px;}
   select, input[type=text], input[type=date]{
     width:100%;
-    padding:9px 12px;
-    border:1px solid var(--borde);
-    border-radius:8px;
+    padding:10px 12px;
+    border:1px solid var(--borde-fuerte);
+    border-radius:var(--radio-ctrl);
     font-family:inherit;
     font-size:.92rem;
-    background:#fff;
+    background:var(--panel);
+    color:var(--texto);
+    transition:border-color .15s, box-shadow .15s;
   }
-  .fila-modo{display:flex; gap:14px; margin-bottom:16px;}
+  select:focus, input[type=text]:focus, input[type=date]:focus, textarea:focus{
+    outline:none;
+    border-color:var(--acento);
+    box-shadow:var(--anillo-foco);
+  }
+  input::placeholder, textarea::placeholder{color:var(--texto-tenue); opacity:.8;}
+  .fila-modo{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; margin-bottom:18px;}
   .opcion-modo{
-    flex:1;
-    border:1px solid var(--borde);
-    border-radius:8px;
-    padding:12px 14px;
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    border:1px solid var(--borde-fuerte);
+    border-radius:10px;
+    padding:14px 16px;
+    margin:0;
     cursor:pointer;
-    font-size:.88rem;
+    font-weight:400;
+    transition:border-color .15s, background .15s;
   }
-  .opcion-modo.activa{border-color:var(--azul-claro); background:#eef2ff;}
-  .opcion-modo input{margin-right:8px;}
+  .opcion-modo:hover{border-color:var(--acento);}
+  .opcion-modo.activa{border-color:var(--acento); background:var(--acento-bg); box-shadow:inset 0 0 0 1px var(--acento);}
+  .opcion-modo input{margin:3px 0 0; accent-color:var(--azul); flex-shrink:0;}
+  .opcion-modo .titulo-opcion{display:block; font-weight:600; font-size:.93rem;}
+  .opcion-modo .desc-opcion{display:block; font-size:.82rem; color:var(--texto-tenue); margin-top:2px;}
 
   button.primario{
     all:unset;
+    box-sizing:border-box;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
     cursor:pointer;
     background:var(--azul);
     color:#fff;
     padding:11px 22px;
-    border-radius:8px;
+    border-radius:var(--radio-ctrl);
     font-weight:600;
     font-size:.92rem;
+    transition:background .15s;
   }
-  button.primario:hover{background:#003a75;}
-  button.primario:disabled{background:#a7b3c9; cursor:not-allowed;}
+  button.primario:hover{background:var(--azul-hover);}
+  button.primario:disabled{opacity:.55; cursor:not-allowed;}
+  button.primario:disabled:hover{background:var(--azul);}
 
   button.secundario{
     all:unset;
+    box-sizing:border-box;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
     cursor:pointer;
-    color:var(--azul);
+    color:var(--acento);
+    background:var(--panel);
     padding:8px 14px;
-    border-radius:8px;
+    border-radius:var(--radio-ctrl);
     font-weight:600;
     font-size:.85rem;
-    border:1px solid var(--azul-claro);
+    border:1px solid var(--borde-fuerte);
+    transition:border-color .15s, background .15s;
   }
-  button.secundario:hover{background:#eef2ff;}
+  button.secundario:hover{border-color:var(--acento); background:var(--acento-bg);}
+  button.secundario:disabled{opacity:.45; cursor:not-allowed;}
+  button.secundario:disabled:hover{border-color:var(--borde-fuerte); background:var(--panel);}
 
   button.peligro{
     all:unset;
+    box-sizing:border-box;
     cursor:pointer;
     color:var(--rojo);
-    padding:6px 10px;
-    font-size:.82rem;
+    padding:8px 10px;
+    border-radius:var(--radio-ctrl);
+    font-size:.84rem;
     font-weight:600;
   }
-  button.peligro:hover{text-decoration:underline;}
+  button.peligro:hover{background:var(--rojo-bg);}
+
+  input[type=file]{font-family:inherit; font-size:.82rem; color:var(--texto-tenue); max-width:100%;}
+  input[type=file]::file-selector-button{
+    font-family:inherit;
+    font-size:.82rem;
+    font-weight:600;
+    color:var(--texto);
+    background:var(--panel-2);
+    border:1px solid var(--borde-fuerte);
+    border-radius:6px;
+    padding:7px 12px;
+    margin-right:10px;
+    cursor:pointer;
+  }
+  input[type=file]::file-selector-button:hover{border-color:var(--acento);}
 
   /* ---------- progreso / log ---------- */
   .barra-progreso{
@@ -171,17 +319,18 @@
   }
   .barra-progreso .relleno{
     height:100%;
-    background:linear-gradient(90deg, var(--azul-claro), var(--azul));
+    background:var(--acento);
+    border-radius:99px;
     width:0%;
     transition:width .4s ease;
   }
-  .estado-linea{font-size:.85rem; color:var(--texto-tenue); margin-bottom:14px;}
+  .estado-linea{font-size:.88rem; color:var(--texto-tenue); margin-bottom:14px;}
   .log{
-    background:#0f1626;
-    color:#cfe0ff;
+    background:var(--log-bg);
+    color:var(--log-texto);
     font-family:ui-monospace,'SF Mono',Consolas,monospace;
     font-size:.78rem;
-    border-radius:8px;
+    border-radius:var(--radio-ctrl);
     padding:14px 16px;
     max-height:260px;
     overflow-y:auto;
@@ -197,35 +346,40 @@
     margin:20px 0;
   }
   .tarjeta-metrica{
+    background:var(--panel-2);
     border:1px solid var(--borde);
-    border-radius:8px;
+    border-radius:10px;
     padding:14px 16px;
   }
-  .tarjeta-metrica .num{font-size:1.6rem; font-weight:700;}
-  .tarjeta-metrica .etiqueta{font-size:.8rem; color:var(--texto-tenue);}
-  .tarjeta-metrica.verde{background:var(--verde-bg);}
+  .tarjeta-metrica .num{font-size:1.75rem; font-weight:700; line-height:1.2; font-variant-numeric:tabular-nums;}
+  .tarjeta-metrica .etiqueta{font-size:.8rem; color:var(--texto-tenue); display:flex; align-items:center; gap:6px; margin-top:2px;}
+  .tarjeta-metrica.verde{background:var(--verde-bg); border-color:transparent;}
   .tarjeta-metrica.verde .num{color:var(--verde);}
-  .tarjeta-metrica.amarillo{background:var(--amarillo-bg);}
+  .tarjeta-metrica.amarillo{background:var(--amarillo-bg); border-color:transparent;}
   .tarjeta-metrica.amarillo .num{color:var(--amarillo);}
-  .tarjeta-metrica.rojo{background:var(--rojo-bg);}
+  .tarjeta-metrica.rojo{background:var(--rojo-bg); border-color:transparent;}
   .tarjeta-metrica.rojo .num{color:var(--rojo);}
+  .punto-semaforo{width:9px; height:9px; border-radius:50%; display:inline-block;}
+  .punto-semaforo.verde{background:var(--verde);}
+  .punto-semaforo.amarillo{background:var(--amarillo);}
+  .punto-semaforo.rojo{background:var(--rojo);}
 
   .caja-avisos{
     background:var(--amarillo-bg);
     color:var(--amarillo);
-    border-radius:8px;
-    padding:12px 16px;
-    font-size:.85rem;
-    margin-bottom:16px;
+    border-radius:10px;
+    padding:14px 16px;
+    font-size:.86rem;
+    margin-bottom:18px;
   }
   .caja-avisos ul{margin:8px 0 0; padding-left:18px; max-height:220px; overflow-y:auto; color:var(--texto);}
   .caja-avisos li{margin-bottom:4px;}
-  details.detalle-log summary{cursor:pointer; font-size:.85rem; font-weight:600; color:var(--azul);}
-  .paso-actual{font-size:.85rem; color:var(--texto-tenue); min-height:1.2em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  details.detalle-log summary{cursor:pointer; font-size:.86rem; font-weight:600; color:var(--acento); width:fit-content;}
+  .paso-actual{font-size:.86rem; color:var(--texto-tenue); min-height:1.2em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
-  .bloque-uso-ia{border:1px solid var(--borde); border-radius:8px; padding:14px 16px; margin-bottom:20px; font-size:.88rem;}
+  .bloque-uso-ia{background:var(--panel-2); border:1px solid var(--borde); border-radius:10px; padding:16px 18px; margin-bottom:20px; font-size:.88rem;}
   .bloque-uso-ia h3{font-size:.95rem; margin:0 0 8px;}
-  .bloque-uso-ia .promedio{font-size:1.3rem; font-weight:700; color:var(--azul);}
+  .bloque-uso-ia .promedio{font-size:1.3rem; font-weight:700; color:var(--acento); font-variant-numeric:tabular-nums;}
   .bloque-uso-ia ul{margin:8px 0 0; padding-left:18px;}
   .bloque-uso-ia li{margin-bottom:3px;}
   .bloque-uso-ia .ok{color:var(--verde); font-weight:600; margin-top:8px;}
@@ -234,25 +388,30 @@
 
   .links-resumen{display:flex; gap:10px; flex-wrap:wrap; margin:6px 0 20px;}
   .links-resumen a{
-    border:1px solid var(--azul-claro);
+    border:1px solid var(--borde-fuerte);
+    background:var(--panel);
     padding:8px 14px;
-    border-radius:8px;
+    border-radius:var(--radio-ctrl);
     font-size:.85rem;
     font-weight:600;
     text-decoration:none;
+    transition:border-color .15s, background .15s;
   }
+  .links-resumen a:hover{border-color:var(--acento); background:var(--acento-bg);}
 
   table{width:100%; border-collapse:collapse; font-size:.87rem;}
   th{
     text-align:left;
-    font-size:.75rem;
+    font-size:.74rem;
+    font-weight:600;
     text-transform:uppercase;
-    letter-spacing:.03em;
+    letter-spacing:.04em;
     color:var(--texto-tenue);
-    border-bottom:1px solid var(--borde);
+    border-bottom:1px solid var(--borde-fuerte);
     padding:8px 10px;
   }
-  td{padding:9px 10px; border-bottom:1px solid #edf0f7;}
+  td{padding:10px; border-bottom:1px solid var(--borde);}
+  tbody tr:hover td{background:var(--panel-2);}
   .chip{
     display:inline-block;
     padding:2px 10px;
@@ -266,39 +425,57 @@
 
   /* ---------- carreras ---------- */
   .fila-carrera{
-    display:flex;
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) auto;
     align-items:center;
-    gap:14px;
-    padding:12px 0;
-    border-bottom:1px solid #edf0f7;
-    flex-wrap:wrap;
+    gap:10px 20px;
+    padding:16px 0;
+    border-bottom:1px solid var(--borde);
   }
   .fila-carrera:last-child{border-bottom:none;}
-  .fila-carrera .info{flex:1; min-width:180px;}
-  .fila-carrera .nombre{font-weight:600; font-size:.92rem;}
+  .fila-carrera .nombre{font-weight:600; font-size:.93rem;}
   .fila-carrera .kw{color:var(--texto-tenue); font-size:.8rem; margin-top:2px;}
-  .plan-badge{font-size:.78rem; font-weight:600; padding:3px 10px; border-radius:99px;}
+  .fila-carrera .badges{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .acciones-carrera{display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap;}
+  .fila-carrera .editor-plan{grid-column:1 / -1;}
+  .plan-badge{font-size:.76rem; font-weight:600; padding:3px 10px; border-radius:99px; white-space:nowrap;}
   .plan-badge.si{background:var(--verde-bg); color:var(--verde);}
   .plan-badge.no{background:var(--amarillo-bg); color:var(--amarillo);}
-  .nivel-badge{font-size:.75rem; font-weight:600; padding:3px 10px; border-radius:99px; white-space:nowrap;}
-  .nivel-badge.grado{background:#eef2ff; color:var(--azul-claro);}
-  .nivel-badge.posgrado{background:#f3e8ff; color:#7c3aed;}
+  .nivel-badge{font-size:.76rem; font-weight:600; padding:3px 10px; border-radius:99px; white-space:nowrap;}
+  .nivel-badge.grado{background:var(--acento-bg); color:var(--acento);}
+  .nivel-badge.posgrado{background:var(--violeta-bg); color:var(--violeta);}
 
-  .form-presentacion{display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:16px;}
-  .form-nueva-carrera{display:grid; grid-template-columns:1fr 1fr auto auto; gap:12px; align-items:end; margin-top:18px;}
+  .form-presentacion{display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:14px; margin-bottom:18px;}
+  .form-nueva-carrera{
+    display:grid;
+    grid-template-columns:1fr 1fr 150px auto;
+    gap:12px;
+    align-items:end;
+    margin-top:22px;
+    padding-top:20px;
+    border-top:1px solid var(--borde);
+  }
 
-  .filtro-nivel{display:flex; gap:8px; margin-bottom:16px;}
+  .filtro-nivel{
+    display:inline-flex;
+    gap:4px;
+    padding:4px;
+    margin-bottom:12px;
+    background:var(--panel-2);
+    border:1px solid var(--borde);
+    border-radius:10px;
+  }
   .filtro-nivel button{
     all:unset;
     cursor:pointer;
-    padding:6px 14px;
-    border-radius:99px;
+    padding:6px 16px;
+    border-radius:7px;
     font-size:.85rem;
     font-weight:600;
-    border:1px solid var(--borde);
     color:var(--texto-tenue);
   }
-  .filtro-nivel button.activo{background:var(--azul); color:#fff; border-color:var(--azul);}
+  .filtro-nivel button:hover{color:var(--texto);}
+  .filtro-nivel button.activo{background:var(--panel); color:var(--texto); box-shadow:var(--sombra), 0 0 0 1px var(--borde-fuerte);}
 
   .editor-plan{
     width:100%;
@@ -308,22 +485,26 @@
     gap:8px;
     flex-basis:100%;
   }
-  .editor-plan textarea{
+  .editor-plan textarea, .texto-extraido-lote{
     width:100%;
-    min-height:220px;
     font-family:ui-monospace,'SF Mono',Consolas,monospace;
     font-size:.82rem;
     padding:12px;
-    border:1px solid var(--borde);
-    border-radius:8px;
+    background:var(--panel-2);
+    color:var(--texto);
+    border:1px solid var(--borde-fuerte);
+    border-radius:var(--radio-ctrl);
     resize:vertical;
   }
-  .editor-plan .acciones{display:flex; gap:10px;}
+  .editor-plan textarea{min-height:220px;}
+  .editor-plan .acciones{display:flex; gap:10px; flex-wrap:wrap;}
 
   /* ---------- carga por lote de planes ---------- */
+  .acciones-lote{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
   .fila-lote-plan{
     border:1px solid var(--borde);
-    border-radius:8px;
+    background:var(--panel-2);
+    border-radius:10px;
     padding:16px;
     margin-top:14px;
   }
@@ -331,101 +512,189 @@
   .cabecera-lote .nombre-pdf{font-weight:600; font-size:.92rem;}
   .caracteres-lote{font-size:.8rem; color:var(--texto-tenue);}
   .aviso-revision{font-size:.8rem; color:var(--amarillo); font-weight:600;}
-  .texto-extraido-lote{
-    width:100%;
-    min-height:160px;
-    font-family:ui-monospace,'SF Mono',Consolas,monospace;
-    font-size:.82rem;
-    padding:12px;
-    border:1px solid var(--borde);
-    border-radius:8px;
-    resize:vertical;
-    margin-bottom:12px;
-  }
+  .texto-extraido-lote{min-height:160px; margin-bottom:12px; background:var(--panel);}
   .asignacion-lote{margin-bottom:12px;}
   .campos-nueva-carrera-lote{display:grid; grid-template-columns:2fr 2fr 1fr; gap:10px; margin-top:10px;}
 
   .oculto{display:none !important;}
-  .mensaje-error{background:var(--rojo-bg); color:var(--rojo); padding:10px 14px; border-radius:8px; font-size:.85rem; margin-bottom:14px;}
-  .mensaje-ok{background:var(--verde-bg); color:var(--verde); padding:10px 14px; border-radius:8px; font-size:.85rem; margin-bottom:14px;}
+  .mensaje-error, .mensaje-ok{padding:11px 14px; border-radius:var(--radio-ctrl); font-size:.86rem; margin-bottom:14px;}
+  .mensaje-error{background:var(--rojo-bg); color:var(--rojo);}
+  .mensaje-ok{background:var(--verde-bg); color:var(--verde);}
+  .mensaje-ok a{color:inherit; font-weight:600;}
 
-  input[type=file]{font-size:.82rem;}
-
-  /* ---------- login gate ---------- */
+  /* ---------- login: pantalla dividida ---------- */
   .pantalla-login{
     min-height:100vh;
+    display:grid;
+    grid-template-columns:minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+  .login-marca{
+    position:relative;
+    overflow:hidden;
+    background:var(--azul-nav);
+    color:#fff;
+    padding:48px 56px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    gap:40px;
+  }
+  /* Dos anillos de fondo, solo decorativos. */
+  .login-marca::before, .login-marca::after{
+    content:"";
+    position:absolute;
+    border-radius:50%;
+    border:1px solid rgba(156,255,235,.14);
+    pointer-events:none;
+  }
+  .login-marca::before{width:520px; height:520px; right:-200px; bottom:-180px;}
+  .login-marca::after{width:340px; height:340px; right:-110px; bottom:-90px; border-color:rgba(156,255,235,.1);}
+  .login-marca > *{position:relative;}
+  .login-encabezado{display:flex; align-items:center; gap:12px;}
+  .login-encabezado .nombre{font-weight:700; font-size:1rem; line-height:1.25;}
+  .login-encabezado .nombre span{display:block; font-weight:500; font-size:.82rem; color:var(--menta);}
+  .login-titular h1{font-size:2.3rem; line-height:1.15; font-weight:800; letter-spacing:-.02em; margin:0 0 14px; max-width:16ch;}
+  .login-titular p{color:rgba(255,255,255,.78); font-size:1rem; margin:0 0 28px; max-width:42ch;}
+  .lista-funciones{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px;}
+  .lista-funciones li{display:flex; align-items:flex-start; gap:12px; font-size:.93rem; color:rgba(255,255,255,.9);}
+  .lista-funciones .icono{color:var(--menta); margin-top:1px;}
+  .login-pie{font-size:.78rem; color:rgba(255,255,255,.55);}
+
+  .login-acceso{display:flex; align-items:center; justify-content:center; padding:40px 24px;}
+  .tarjeta-login{
+    width:min(400px, 100%);
+    background:var(--panel);
+    border:1px solid var(--borde);
+    border-radius:16px;
+    padding:36px 32px;
+    box-shadow:var(--sombra);
+  }
+  .tarjeta-login h2{font-size:1.4rem; font-weight:700; margin:0 0 6px;}
+  .tarjeta-login .sub-login{color:var(--texto-tenue); font-size:.92rem; margin:0 0 24px;}
+  .tarjeta-login .sub-login strong{color:var(--texto);}
+  .btn-google{
+    box-sizing:border-box;
+    width:100%;
     display:flex;
     align-items:center;
     justify-content:center;
-    flex-direction:column;
-    gap:18px;
-    text-align:center;
-    padding:20px;
-  }
-  .pantalla-login .marca-login{
-    font-weight:800;
-    font-size:1.5rem;
-    color:var(--azul);
-  }
-  .pantalla-login .sub-login{color:var(--texto-tenue); max-width:380px; font-size:.92rem;}
-  .btn-google{
-    all:unset;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
     gap:10px;
-    background:#fff;
-    border:1px solid var(--borde);
-    padding:11px 22px;
-    border-radius:8px;
+    background:var(--panel);
+    color:var(--texto);
+    text-decoration:none;
+    border:1px solid var(--borde-fuerte);
+    padding:12px 22px;
+    border-radius:var(--radio-ctrl);
     font-weight:600;
-    font-size:.92rem;
-    box-shadow:0 1px 2px rgba(0,0,0,.06);
+    font-size:.93rem;
+    transition:border-color .15s, background .15s;
   }
-  .btn-google:hover{border-color:var(--azul-claro);}
-  .barra-usuario{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:8px;
-    padding:0 24px 16px;
-    font-size:.78rem;
-    color:rgba(255,255,255,.75);
-    border-bottom:1px solid rgba(255,255,255,.15);
-    margin-bottom:14px;
+  .btn-google:hover{border-color:var(--acento); background:var(--panel-2);}
+  .nota-login{font-size:.8rem; color:var(--texto-tenue); margin:20px 0 0; padding-top:18px; border-top:1px solid var(--borde);}
+
+  /* ---------- tablet y celular ---------- */
+  @media (max-width: 860px){
+    .app{flex-direction:column;}
+    .nav{
+      width:100%;
+      height:auto;
+      position:sticky;
+      top:0;
+      z-index:10;
+      flex-direction:row;
+      flex-wrap:wrap;
+      align-items:center;
+      gap:8px 12px;
+      padding:10px 14px;
+    }
+    .nav .marca{padding:0; margin:0; border:none; gap:10px;}
+    .nav .marca .sub{display:none;}
+    .logo-dp{width:32px; height:32px; font-size:.82rem; border-radius:8px;}
+    .nav-tabs{order:3; flex-basis:100%; flex-direction:row; overflow-x:auto; gap:4px; scrollbar-width:none;}
+    .nav-tabs::-webkit-scrollbar{display:none;}
+    .nav button{white-space:nowrap; padding:8px 12px; font-size:.88rem;}
+    .nav button.activo{box-shadow:inset 0 -2px 0 var(--menta);}
+    .pie-nav{margin:0 0 0 auto;}
+    .nav .estado-sistema{display:none;}
+    .barra-usuario{border:none; padding:0;}
+    .email-usuario{display:none;}
+
+    main{padding:24px 16px 40px;}
+    h1{font-size:1.35rem;}
+    .panel{padding:20px 18px;}
+    .fila-modo{grid-template-columns:1fr;}
+    .form-nueva-carrera{grid-template-columns:1fr;}
+    .campos-nueva-carrera-lote{grid-template-columns:1fr;}
+    .fila-carrera{grid-template-columns:1fr;}
+    .acciones-carrera{justify-content:flex-start;}
+
+    .pantalla-login{grid-template-columns:1fr; grid-template-rows:auto 1fr;}
+    .login-marca{padding:28px 22px; gap:20px;}
+    .login-titular h1{font-size:1.6rem; margin-bottom:8px;}
+    .login-titular p{margin-bottom:0;}
+    .lista-funciones, .login-pie{display:none;}
+    .login-acceso{align-items:flex-start; padding:24px 16px 40px;}
+    .tarjeta-login{padding:28px 22px;}
   }
-  .barra-usuario a{color:var(--menta); text-decoration:none; font-weight:600;}
-  .barra-usuario a:hover{text-decoration:underline;}
-  .email-usuario{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 </style>
 </head>
 <body>
 
 <div id="pantalla-login" class="pantalla-login oculto">
-  <div class="marca-login">UdeSA · Desarrollo Profesional</div>
-  <div class="sub-login">Análisis de perfiles de LinkedIn. Iniciá sesión con tu cuenta de Google institucional para correr el pipeline y gestionar carreras — todo lo que hagas queda registrado con tu propia cuenta.</div>
-  <div id="mensaje-login-error"></div>
-  <a href="/auth/login" class="btn-google">
-    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.5-2.1 14.2-5.6l-6.6-5.4C29.6 34.9 27 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.6 5.4C41.5 35.8 44 30.3 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
-    Iniciar sesión con Google
-  </a>
+  <section class="login-marca">
+    <div class="login-encabezado">
+      <div class="logo-dp">DP</div>
+      <div class="nombre">Universidad de San Andrés<span>Desarrollo Profesional</span></div>
+    </div>
+    <div class="login-titular">
+      <h1>Análisis de perfiles de LinkedIn</h1>
+      <p>Revisá los perfiles de tus estudiantes con IA y devolveles un informe claro de qué mejorar.</p>
+      <ul class="lista-funciones">
+        <li><svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>Analiza los PDF de la carpeta de Drive con IA</li>
+        <li><svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>Vuelca los resultados y el semáforo en la planilla</li>
+        <li><svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>Genera los informes individuales y las presentaciones de estadísticas</li>
+      </ul>
+    </div>
+    <div class="login-pie">Universidad de San Andrés · Desarrollo Profesional</div>
+  </section>
+
+  <section class="login-acceso">
+    <div class="tarjeta-login">
+      <h2>Iniciá sesión</h2>
+      <p class="sub-login" id="texto-dominio-login">Entrá con tu cuenta de Google institucional.</p>
+      <div id="mensaje-login-error"></div>
+      <a href="/auth/login" class="btn-google">
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6 29.6 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.5-2.1 14.2-5.6l-6.6-5.4C29.6 34.9 27 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.6 5.4C41.5 35.8 44 30.3 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
+        Continuar con Google
+      </a>
+      <p class="nota-login">Todo lo que hagas queda hecho con tu propia cuenta: los archivos se crean a tu nombre en Drive.</p>
+    </div>
+  </section>
 </div>
 
 <div class="app oculto" id="app-principal">
   <nav class="nav">
     <div class="marca">
-      <div class="sigla">UdeSA · DP</div>
-      <div class="sub">Análisis de perfiles de LinkedIn</div>
+      <div class="logo-dp">DP</div>
+      <div>
+        <div class="sigla">UdeSA · DP</div>
+        <div class="sub">Análisis de perfiles de LinkedIn</div>
+      </div>
     </div>
-    <div class="barra-usuario">
-      <span class="email-usuario" id="email-usuario"></span>
-      <a href="/auth/logout">Salir</a>
+    <div class="nav-tabs">
+      <button data-tab="ejecutar" class="activo"><svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Ejecutar análisis</button>
+      <button data-tab="carreras"><svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 9 12 4 2 9l10 5 10-5z"/><path d="M6 11v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/></svg>Carreras y planes</button>
+      <button data-tab="presentaciones"><svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M12 16v4M8 20h8M7.5 12l3-3 2 2 4-4"/></svg>Presentaciones</button>
     </div>
-    <button data-tab="ejecutar" class="activo">Ejecutar análisis</button>
-    <button data-tab="carreras">Carreras y planes</button>
-    <button data-tab="presentaciones">Presentaciones</button>
-    <div class="estado-sistema" id="panel-estado-sistema">
-      <div class="fila"><span class="punto ok"></span> Verificando…</div>
+    <div class="pie-nav">
+      <div class="estado-sistema" id="panel-estado-sistema">
+        <div class="fila"><span class="punto ok"></span> Verificando…</div>
+      </div>
+      <div class="barra-usuario">
+        <span class="avatar" id="avatar-usuario" aria-hidden="true"></span>
+        <span class="email-usuario" id="email-usuario"></span>
+        <a href="/auth/logout">Salir</a>
+      </div>
     </div>
   </nav>
 
@@ -442,10 +711,18 @@
 
         <div class="fila-modo">
           <label class="opcion-modo activa" id="opcion-mixto">
-            <input type="radio" name="modo" value="mixto" checked> Conjunto mixto
+            <input type="radio" name="modo" value="mixto" checked>
+            <span>
+              <span class="titulo-opcion">Conjunto mixto</span>
+              <span class="desc-opcion">Perfiles de distintas carreras: la carrera de cada uno se detecta sola.</span>
+            </span>
           </label>
           <label class="opcion-modo" id="opcion-cohorte">
-            <input type="radio" name="modo" value="cohorte"> Cohorte de una carrera
+            <input type="radio" name="modo" value="cohorte">
+            <span>
+              <span class="titulo-opcion">Cohorte de una carrera</span>
+              <span class="desc-opcion">Todos los perfiles se analizan como de la carrera que elijas.</span>
+            </span>
           </label>
         </div>
 
@@ -486,15 +763,15 @@
           </div>
           <div class="tarjeta-metrica verde">
             <div class="num" id="res-verde">0</div>
-            <div class="etiqueta">🟢 Verde</div>
+            <div class="etiqueta"><span class="punto-semaforo verde"></span>Verde</div>
           </div>
           <div class="tarjeta-metrica amarillo">
             <div class="num" id="res-amarillo">0</div>
-            <div class="etiqueta">🟡 Amarillo</div>
+            <div class="etiqueta"><span class="punto-semaforo amarillo"></span>Amarillo</div>
           </div>
           <div class="tarjeta-metrica rojo">
             <div class="num" id="res-rojo">0</div>
-            <div class="etiqueta">🔴 Rojo</div>
+            <div class="etiqueta"><span class="punto-semaforo rojo"></span>Rojo</div>
           </div>
         </div>
 
@@ -547,7 +824,7 @@
           <div>
             <label for="presentacion-modo">Tipo de corrida</label>
             <select id="presentacion-modo">
-              <option value="">Cohortes y conjuntos mixtos</option>
+              <option value="">Todas las corridas</option>
               <option value="Cohorte">Solo cohortes</option>
               <option value="Mixto">Solo conjuntos mixtos</option>
             </select>
@@ -601,8 +878,10 @@
         <h2>Carga por lote de planes de estudio</h2>
         <p class="desc">Subí varios PDF de una sola vez. Se extraen todos con la misma lógica automática de siempre (grilla → pilares → narrativo → tablas → IA como último recurso) y quedan acá esperando tu confirmación — no se guarda nada hasta que elijas a qué carrera corresponde cada uno.</p>
 
-        <input type="file" id="input-archivos-lote" accept="application/pdf" multiple>
-        <button class="primario" id="btn-iniciar-lote" style="margin-left:12px;">Extraer todos</button>
+        <div class="acciones-lote">
+          <input type="file" id="input-archivos-lote" accept="application/pdf" multiple>
+          <button class="primario" id="btn-iniciar-lote">Extraer todos</button>
+        </div>
 
         <div class="oculto" id="progreso-lote" style="margin-top:16px;">
           <div class="estado-linea" id="texto-progreso-lote">Preparando…</div>
@@ -645,8 +924,14 @@ async function iniciarApp(){
   try{
     const r = await fetch(`${API}/api/auth/estado`);
     const d = await r.json();
+    if (d.dominio){
+      document.getElementById('texto-dominio-login').innerHTML =
+        `Entrá con tu cuenta de Google <strong>@${esc(d.dominio)}</strong>.`;
+    }
     if (d.autenticado){
       document.getElementById('email-usuario').textContent = d.email;
+      document.getElementById('email-usuario').title = d.email;
+      document.getElementById('avatar-usuario').textContent = (d.email || '?').charAt(0).toUpperCase();
       document.getElementById('pantalla-login').classList.add('oculto');
       document.getElementById('app-principal').classList.remove('oculto');
       cargarEstadoSistema();
@@ -1038,13 +1323,18 @@ function renderizarListaCarreras(){
       <div class="info">
         <div class="nombre">${esc(c.nombre)}</div>
         <div class="kw">${esc(c.palabras_clave.join(', '))}</div>
+        <div class="badges">
+          <span class="nivel-badge ${c.nivel || 'grado'}">${c.nivel === 'posgrado' ? 'Posgrado' : 'Grado'}</span>
+          <span class="plan-badge ${c.tiene_plan ? 'si' : 'no'}">${c.tiene_plan ? 'Plan cargado' : 'Sin plan'}</span>
+        </div>
       </div>
-      <span class="nivel-badge ${c.nivel || 'grado'}">${c.nivel === 'posgrado' ? 'Posgrado' : 'Grado'}</span>
-      <span class="plan-badge ${c.tiene_plan ? 'si' : 'no'}">${c.tiene_plan ? 'Plan cargado' : 'Sin plan'}</span>
-      <input type="file" accept="application/pdf" class="input-plan" style="max-width:150px;">
-      <button class="secundario btn-subir-plan">${c.tiene_plan ? 'Reemplazar' : 'Subir plan'}</button>
-      <button class="secundario btn-ver-plan" ${c.tiene_plan ? '' : 'disabled'}>Ver / editar</button>
-      <button class="peligro btn-borrar-carrera">Eliminar</button>
+      <div class="acciones-carrera">
+        <!-- El selector de archivo queda oculto: el botón lo abre y el PDF se sube apenas se elige. -->
+        <input type="file" accept="application/pdf" class="input-plan oculto" aria-label="PDF del plan de estudios de ${esc(c.nombre)}">
+        <button class="secundario btn-subir-plan">${c.tiene_plan ? 'Reemplazar plan' : 'Subir plan'}</button>
+        <button class="secundario btn-ver-plan" ${c.tiene_plan ? '' : 'disabled'}>Ver / editar</button>
+        <button class="peligro btn-borrar-carrera">Eliminar</button>
+      </div>
       <div class="editor-plan oculto"></div>
     </div>
   `).join('') || '<p class="desc">No hay carreras en este filtro.</p>';
@@ -1052,10 +1342,14 @@ function renderizarListaCarreras(){
   cont.querySelectorAll('.fila-carrera').forEach(fila => {
     const nombre = fila.dataset.carrera;
 
-    fila.querySelector('.btn-subir-plan').addEventListener('click', async () => {
-      const input = fila.querySelector('.input-plan');
-      if (!input.files.length){ alert('Elegí un PDF primero.'); return; }
+    const input = fila.querySelector('.input-plan');
+    fila.querySelector('.btn-subir-plan').addEventListener('click', () => input.click());
+
+    input.addEventListener('change', async () => {
+      if (!input.files.length) return;
       const btn = fila.querySelector('.btn-subir-plan');
+      const textoBoton = btn.textContent;
+      btn.disabled = true;
       btn.textContent = 'Procesando…';
 
       const formData = new FormData();
@@ -1075,7 +1369,9 @@ function renderizarListaCarreras(){
         cargarCarreras();
       }catch(e){
         document.getElementById('mensaje-carreras').innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
-        btn.textContent = 'Subir plan';
+        btn.disabled = false;
+        btn.textContent = textoBoton;
+        input.value = '';  // para poder volver a elegir el mismo PDF
       }
     });
 

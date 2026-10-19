@@ -209,15 +209,16 @@ def auth_logout(request: Request):
 
 @app.get("/api/auth/estado")
 def api_auth_estado(request: Request):
+    # dominio: para que la pantalla de login diga con qué cuenta entrar (ej. "@udesa.edu.ar").
     email = request.session.get("email")
     if not email:
-        return {"autenticado": False, "email": None}
+        return {"autenticado": False, "email": None, "dominio": DOMINIO_PERMITIDO}
     # Si el token de esta persona ya no sirve (revocado, expirado sin refresh_token), la
     # deslogueamos acá para que el frontend le vuelva a pedir el login.
     if not cargar_credenciales_usuario(email):
         request.session.clear()
-        return {"autenticado": False, "email": None}
-    return {"autenticado": True, "email": email}
+        return {"autenticado": False, "email": None, "dominio": DOMINIO_PERMITIDO}
+    return {"autenticado": True, "email": email, "dominio": DOMINIO_PERMITIDO}
 
 
 def usuario_actual(request: Request) -> Credentials:
