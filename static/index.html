@@ -437,7 +437,9 @@
   .fila-carrera .kw{color:var(--texto-tenue); font-size:.8rem; margin-top:2px;}
   .fila-carrera .badges{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
   .acciones-carrera{display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap;}
-  .fila-carrera .editor-plan{grid-column:1 / -1;}
+  .fila-carrera .editor-plan, .fila-carrera .mensaje-fila{grid-column:1 / -1;}
+  .mensaje-fila:empty{display:none;}
+  .mensaje-fila > div{margin-bottom:0;}
   .plan-badge{font-size:.76rem; font-weight:600; padding:3px 10px; border-radius:99px; white-space:nowrap;}
   .plan-badge.si{background:var(--verde-bg); color:var(--verde);}
   .plan-badge.no{background:var(--amarillo-bg); color:var(--amarillo);}
@@ -517,9 +519,19 @@
   .campos-nueva-carrera-lote{display:grid; grid-template-columns:2fr 2fr 1fr; gap:10px; margin-top:10px;}
 
   .oculto{display:none !important;}
-  .mensaje-error, .mensaje-ok{padding:11px 14px; border-radius:var(--radio-ctrl); font-size:.86rem; margin-bottom:14px;}
+  .mensaje-error, .mensaje-ok, .mensaje-aviso{padding:11px 14px; border-radius:var(--radio-ctrl); font-size:.86rem; margin-bottom:14px;}
   .mensaje-error{background:var(--rojo-bg); color:var(--rojo);}
   .mensaje-ok{background:var(--verde-bg); color:var(--verde);}
+  .mensaje-aviso{background:var(--amarillo-bg); color:var(--amarillo);}
+  .con-icono{display:inline-flex; align-items:flex-start; gap:8px;}
+  .con-icono .icono{width:16px; height:16px; margin-top:2px;}
+  .con-icono.ok .icono{color:var(--verde);}
+  .con-icono.alerta .icono{color:var(--amarillo);}
+  .con-icono.error .icono{color:var(--rojo);}
+  .links-resumen a .icono{width:16px; height:16px; vertical-align:-3px; margin-right:6px;}
+  .lista-avisos{margin:8px 0 0; padding:0; list-style:none;}
+  .lista-avisos li, .caja-avisos li{margin-bottom:4px;}
+  .caja-avisos ul{list-style:none; padding-left:0;}
   .mensaje-ok a{color:inherit; font-weight:600;}
 
   /* ---------- login: pantalla dividida ---------- */
@@ -943,6 +955,31 @@ function esc(valor){
   return String(valor ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
+/* Íconos de línea, del mismo estilo que los del menú, para los mensajes que arma la página. */
+const TRAZOS_ICONO = {
+  ok: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>',
+  alerta: '<path d="M10.3 4.2 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4M12 17h.01"/>',
+  error: '<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/>',
+  planilla: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+  carpeta: '<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/>',
+  estadisticas: '<path d="M3 20h18M6.5 16v-5M11.5 16V6M16.5 16v-8"/>',
+  ia: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9.5 2.5v3.5M14.5 2.5v3.5M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5"/>',
+};
+function icono(nombre){
+  return `<svg class="icono" viewBox="0 0 24 24" aria-hidden="true">${TRAZOS_ICONO[nombre] || ''}</svg>`;
+}
+
+/* Los avisos del pipeline llegan con su emoji adelante (⚠️ aviso, ❌ error, ✅ ok): se cambia
+   por el ícono equivalente. Devuelve HTML ya escapado. */
+function textoConIcono(texto){
+  const t = String(texto ?? '').trim();
+  const tipos = [[/^❌\s*/u, 'error'], [/^⚠️?\s*/u, 'alerta'], [/^✅\s*/u, 'ok']];
+  for (const [patron, tipo] of tipos){
+    if (patron.test(t)) return `<span class="con-icono ${tipo}">${icono(tipo)}<span>${esc(t.replace(patron, ''))}</span></span>`;
+  }
+  return esc(t);
+}
+
 /* ---------------- gate de login ---------------- */
 async function iniciarApp(){
   const params = new URLSearchParams(window.location.search);
@@ -1150,7 +1187,7 @@ function pasoActual(log){
 
 /* Muestra el error y deja volver a la pantalla de lanzar (antes quedaba trabado hasta recargar). */
 function terminarCorridaConError(mensaje){
-  document.getElementById('texto-progreso').textContent = '❌ ' + mensaje;
+  document.getElementById('texto-progreso').innerHTML = textoConIcono('❌ ' + mensaje);
   document.getElementById('detalle-log-progreso').open = true;  // ante un error, el detalle sí sirve
   const panel = document.getElementById('panel-progreso');
   if (!panel.querySelector('.btn-volver-error')){
@@ -1181,7 +1218,7 @@ function mostrarResumen(resumen, log){
   // perdían de vista — una corrida podía terminar "bien" aunque no se hubiera escrito la planilla.
   const avisos = resumen.avisos || [];
   document.getElementById('avisos-resumen').innerHTML = avisos.length
-    ? `<div class="caja-avisos"><strong>⚠️ ${avisos.length} aviso(s) o error(es) durante la corrida.</strong> Revisalos antes de dar la corrida por buena:<ul>${avisos.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>`
+    ? `<div class="caja-avisos"><div class="con-icono">${icono('alerta')}<span><strong>${avisos.length} aviso(s) o error(es) durante la corrida.</strong> Revisalos antes de dar la corrida por buena:</span></div><ul>${avisos.map(a => `<li>${textoConIcono(a)}</li>`).join('')}</ul></div>`
     : '';
   document.getElementById('log-resumen').textContent = (log || []).join('\n');
   document.getElementById('uso-ia-resumen').innerHTML = renderizarUsoIA(resumen.uso_ia);
@@ -1194,9 +1231,14 @@ function mostrarResumen(resumen, log){
 
   const links = document.getElementById('links-resumen');
   links.innerHTML = '';
-  const etiquetas = {planilla: '📊 Ver planilla', carpeta_informes: '📁 Ver informes en Drive', presentacion_estadisticas: '📈 Ver estadísticas'};
+  const etiquetas = {
+    planilla: ['planilla', 'Ver planilla'],
+    carpeta_informes: ['carpeta', 'Ver informes en Drive'],
+    presentacion_estadisticas: ['estadisticas', 'Ver estadísticas'],
+  };
   for (const [clave, url] of Object.entries(resumen.links || {})){
-    links.innerHTML += `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(etiquetas[clave] || clave)}</a>`;
+    const [nombreIcono, texto] = etiquetas[clave] || [null, clave];
+    links.innerHTML += `<a href="${esc(url)}" target="_blank" rel="noopener">${nombreIcono ? icono(nombreIcono) : ''}${esc(texto)}</a>`;
   }
 
   const tbody = document.getElementById('tabla-alumnos');
@@ -1231,7 +1273,7 @@ function renderizarUsoIA(uso){
   const proveedores = Object.entries(uso.por_proveedor || {});
   if (!proveedores.length && !uso.sin_analizar) return '';
 
-  let html = '<div class="bloque-uso-ia"><h3>🤖 Uso de IA</h3>';
+  let html = `<div class="bloque-uso-ia"><h3 class="con-icono">${icono('ia')}Uso de IA</h3>`;
   if (uso.promedio_tokens_por_perfil != null){
     html += `<div><span class="promedio">${esc(formatearNumero(uso.promedio_tokens_por_perfil))}</span> tokens por perfil, en promedio
       <span style="color:var(--texto-tenue)">(${uso.perfiles_con_tokens} perfil(es) analizados con IA · ${esc(formatearNumero(uso.tokens_totales))} tokens en total)</span></div>`;
@@ -1249,15 +1291,15 @@ function renderizarUsoIA(uso){
 
   const fallos = Object.entries(uso.fallos_por_proveedor || {});
   if (!fallos.length){
-    html += '<div class="ok">✅ Ninguna IA se quedó sin cuota.</div>';
+    html += `<div class="ok">${textoConIcono('✅ Ninguna IA se quedó sin cuota.')}</div>`;
   }
   for (const [proveedor, conteo] of fallos){
-    const nombre = esc(NOMBRES_IA[proveedor] || proveedor);
-    if (conteo.cuota) html += `<div class="alerta">⚠️ ${nombre} se quedó sin cuota o estuvo saturada en ${conteo.cuota} perfil(es).</div>`;
-    if (conteo.error) html += `<div class="error">❌ ${nombre} dio error en ${conteo.error} perfil(es).</div>`;
+    const nombre = NOMBRES_IA[proveedor] || proveedor;
+    if (conteo.cuota) html += `<div class="alerta">${textoConIcono(`⚠️ ${nombre} se quedó sin cuota o estuvo saturada en ${conteo.cuota} perfil(es).`)}</div>`;
+    if (conteo.error) html += `<div class="error">${textoConIcono(`❌ ${nombre} dio error en ${conteo.error} perfil(es).`)}</div>`;
   }
   if (uso.sin_analizar){
-    html += `<div class="error">❌ ${uso.sin_analizar} perfil(es) no los pudo analizar ninguna IA (quedan en Drive para reintentar).</div>`;
+    html += `<div class="error">${textoConIcono(`❌ ${uso.sin_analizar} perfil(es) no los pudo analizar ninguna IA (quedan en Drive para reintentar).`)}</div>`;
   }
   return html + '</div>';
 }
@@ -1327,11 +1369,11 @@ document.getElementById('btn-generar-presentacion').addEventListener('click', as
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'No se pudo generar la presentación.');
     const avisos = (d.avisos || []).filter(a => a.includes('⚠️') || a.includes('❌'));
-    const listaAvisos = avisos.length ? `<ul style="margin:8px 0 0; padding-left:18px;">${avisos.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
+    const listaAvisos = avisos.length ? `<ul class="lista-avisos">${avisos.map(a => `<li>${textoConIcono(a)}</li>`).join('')}</ul>` : '';
     if (d.generada){
       msg.innerHTML = `<div class="mensaje-ok">Lista: <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.nombre)}</a> (${d.perfiles} perfiles). Quedó en la carpeta de presentaciones, en "Por rango".${listaAvisos}</div>`;
     } else {
-      msg.innerHTML = `<div class="mensaje-error">${esc(avisos[0] || 'No hay perfiles para ese período y filtro.')}</div>`;
+      msg.innerHTML = `<div class="mensaje-error">${textoConIcono(avisos[0] || 'No hay perfiles para ese período y filtro.')}</div>`;
     }
   }catch(e){
     msg.innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
@@ -1344,6 +1386,7 @@ document.getElementById('btn-generar-presentacion').addEventListener('click', as
 /* ---------------- gestión de carreras y planes ---------------- */
 let nivelFiltroActual = 'todas';
 let carrerasCache = [];
+let mensajePendienteFila = null;  // {nombre, html}: ver renderizarListaCarreras
 
 document.querySelectorAll('#filtro-nivel-carreras button').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1385,12 +1428,20 @@ function renderizarListaCarreras(){
         <button class="secundario btn-ver-plan" ${c.tiene_plan ? '' : 'disabled'}>Ver / editar</button>
         <button class="peligro btn-borrar-carrera">Eliminar</button>
       </div>
+      <div class="mensaje-fila"></div>
       <div class="editor-plan oculto"></div>
     </div>
   `).join('') || '<p class="desc">No hay carreras en este filtro.</p>';
 
   cont.querySelectorAll('.fila-carrera').forEach(fila => {
     const nombre = fila.dataset.carrera;
+    const mensajeFila = fila.querySelector('.mensaje-fila');
+
+    // Mensaje que quedó de una acción que volvió a cargar la lista (por ejemplo, subir un plan).
+    if (mensajePendienteFila && mensajePendienteFila.nombre === nombre){
+      mensajeFila.innerHTML = mensajePendienteFila.html;
+      mensajePendienteFila = null;
+    }
 
     const input = fila.querySelector('.input-plan');
     fila.querySelector('.btn-subir-plan').addEventListener('click', () => input.click());
@@ -1401,6 +1452,7 @@ function renderizarListaCarreras(){
       const textoBoton = btn.textContent;
       btn.disabled = true;
       btn.textContent = 'Procesando…';
+      mensajeFila.innerHTML = '';
 
       const formData = new FormData();
       formData.append('archivo', input.files[0]);
@@ -1410,15 +1462,17 @@ function renderizarListaCarreras(){
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || 'No se pudo procesar el PDF.');
 
-        const msg = document.getElementById('mensaje-carreras');
-        if (d.requiere_revision_manual){
-          msg.innerHTML = `<div class="mensaje-error">Plan de '${esc(nombre)}' guardado, pero con el método '${esc(d.metodo_usado)}' — convendría revisarlo con "Ver / editar" antes de confiar en él del todo.</div>`;
-        } else {
-          msg.innerHTML = `<div class="mensaje-ok">Plan de '${esc(nombre)}' guardado correctamente (método: ${esc(d.metodo_usado)}, ${d.caracteres} caracteres).</div>`;
-        }
+        // La lista se vuelve a cargar (cambia "Sin plan" por "Plan cargado"): el mensaje se pone
+        // en la fila nueva de esta carrera.
+        mensajePendienteFila = {
+          nombre,
+          html: d.requiere_revision_manual
+            ? `<div class="mensaje-aviso">Plan guardado, pero con el método '${esc(d.metodo_usado)}': convendría revisarlo con "Ver / editar" antes de confiar en él del todo.</div>`
+            : `<div class="mensaje-ok">Plan guardado (método: ${esc(d.metodo_usado)}, ${d.caracteres} caracteres).</div>`,
+        };
         cargarCarreras();
       }catch(e){
-        document.getElementById('mensaje-carreras').innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
+        mensajeFila.innerHTML = `<div class="mensaje-error">${esc(e.message)}</div>`;
         btn.disabled = false;
         btn.textContent = textoBoton;
         input.value = '';  // para poder volver a elegir el mismo PDF
@@ -1437,6 +1491,7 @@ function renderizarListaCarreras(){
 
       editor.classList.remove('oculto');
       editor.innerHTML = '<p class="desc">Cargando el plan…</p>';
+      mensajeFila.innerHTML = '';
 
       try{
         const r = await apiFetch(`${API}/api/carreras/${encodeURIComponent(nombre)}/plan`);
@@ -1462,7 +1517,9 @@ function renderizarListaCarreras(){
         editor.querySelector('.btn-guardar-plan').addEventListener('click', async () => {
           const textoNuevo = editor.querySelector('textarea').value;
           const btnGuardar = editor.querySelector('.btn-guardar-plan');
+          btnGuardar.disabled = true;
           btnGuardar.textContent = 'Guardando…';
+          mensajeFila.innerHTML = '';
           try{
             const r2 = await apiFetch(`${API}/api/carreras/${encodeURIComponent(nombre)}/plan`, {
               method: 'PUT',
@@ -1471,13 +1528,14 @@ function renderizarListaCarreras(){
             });
             const d2 = await r2.json();
             if (!r2.ok) throw new Error(d2.detail || 'No se pudo guardar.');
-            document.getElementById('mensaje-carreras').innerHTML =
-              `<div class="mensaje-ok">Plan de '${esc(nombre)}' actualizado (${d2.caracteres} caracteres).</div>`;
+            mensajeFila.innerHTML = `<div class="mensaje-ok">Plan actualizado (${d2.caracteres} caracteres).</div>`;
             editor.classList.add('oculto');
             editor.innerHTML = '';
           }catch(e){
+            // El editor queda abierto con lo que se escribió, para no perderlo.
+            btnGuardar.disabled = false;
             btnGuardar.textContent = 'Guardar cambios';
-            alert('Error al guardar: ' + e.message);
+            mensajeFila.innerHTML = `<div class="mensaje-error">No se pudo guardar: ${esc(e.message)}</div>`;
           }
         });
       }catch(e){
@@ -1622,7 +1680,7 @@ function agregarFilaResultadoLote(res, indice){
       <span class="nombre-pdf">${esc(res.pdf_original)}</span>
       <span class="chip ${claseChip}">${esc(res.metodo_usado)}</span>
       <span class="caracteres-lote">${res.caracteres} caracteres</span>
-      ${res.requiere_revision_manual ? '<span class="aviso-revision">⚠️ convendría revisar el texto antes de guardar</span>' : ''}
+      ${res.requiere_revision_manual ? `<span class="aviso-revision">${textoConIcono('⚠️ Convendría revisar el texto antes de guardar')}</span>` : ''}
     </div>
     <textarea class="texto-extraido-lote"></textarea>
     <div class="asignacion-lote">
